@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  reaction:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: reaction
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
