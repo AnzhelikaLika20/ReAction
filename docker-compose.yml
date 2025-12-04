@@ -10,3 +10,17 @@ services:
       - .env
     ports:
       - "8080:8080"
+    depends_on:
+      kafka:
+        condition: service_started
+
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: kafka
+    hostname: kafka
+    ports:
+      - "9092:9092"
+      - "9094:9094"  # Внешний
+      - "9093:9093"  # KRaft
+    environment:
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"

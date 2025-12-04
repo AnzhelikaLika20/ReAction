@@ -8,4 +8,7 @@ require (
 	github.com/zelenin/go-tdlib v0.7.6
 )
 
-require golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8 // indirect
+require (
+	github.com/stretchr/testify v1.8.0 // indirect
+	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8 // indirect
+)
