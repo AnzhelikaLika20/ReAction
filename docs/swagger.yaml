@@ -1,0 +1,18 @@
+info:
+  contact: {}
+paths:
+  /ping:
+    get:
+      description: endpoint для проверки что сервер работает
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Проверка работоспособности API
+      tags:
+      - health
+swagger: "2.0"

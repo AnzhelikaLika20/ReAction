@@ -1,17 +1,22 @@
 .PHONY: run stop logs clean
 
 run:
-	docker-compose run --rm reaction
+	docker compose up -d --build
 
 build:
-	docker-compose build
+	docker compose build
 
 stop:
-	docker-compose down
+	docker compose down
 
 logs:
-	docker-compose logs -f
+	docker logs reaction
 
 clean:
-	docker-compose down -v
+	docker compose down -v
 	docker system prune -f
+
+swag:
+	swag init -g ./cmd/main.go -o ./docs --quiet
+
+up: swag run
