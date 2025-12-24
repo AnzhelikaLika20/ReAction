@@ -9,6 +9,11 @@ import (
 type AppConfig struct {
 	Telegram TelegramConfig
 	Logging  LoggingConfig
+	Server ServerConfig
+}
+
+type ServerConfig struct {
+	Port string
 }
 
 type TelegramConfig struct {
@@ -24,15 +29,17 @@ type LoggingConfig struct {
 func Load() (*AppConfig, error) {
 	cfg := &AppConfig{}
 
-	apiID, err := strconv.Atoi(getEnv("TELEGRAM_API_ID", ""))
+	apiID, err := strconv.Atoi(GetEnv("TELEGRAM_API_ID", ""))
 	if err != nil {
 		return nil, err
 	}
 	cfg.Telegram.APIID = int32(apiID)
-	cfg.Telegram.APIHash = getEnv("TELEGRAM_API_HASH", "")
+	cfg.Telegram.APIHash = GetEnv("TELEGRAM_API_HASH", "")
 
-	cfg.Logging.Level = getEnv("LOG_LEVEL", "info")
-	cfg.Logging.Format = getEnv("LOG_FORMAT", "text")
+	cfg.Logging.Level = GetEnv("LOG_LEVEL", "info")
+	cfg.Logging.Format = GetEnv("LOG_FORMAT", "text")
+
+	cfg.Server.Port = GetEnv("SERVER_HTTP_PORT", "8080")
 
 	return cfg, nil
 }
@@ -50,7 +57,7 @@ func MustLoad() *AppConfig {
 	return cfg
 }
 
-func getEnv(key, defaultValue string) string {
+func GetEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
 	}

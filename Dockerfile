@@ -13,37 +13,48 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     gperf \
     php-cli \
-    golang-go \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Need to install Go
-# RUN wget https://go.dev/dl/go1.25.0.linux-amd64.tar.gz && \
-#     rm -rf /usr/local/go && tar -C /usr/local -xzf go1.25.0.linux-amd64.tar.gz && \
-#     echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+RUN wget https://go.dev/dl/go1.25.0.linux-amd64.tar.gz && \
+    rm -rf /usr/local/go && tar -C /usr/local -xzf go1.25.0.linux-amd64.tar.gz && \
+    rm go1.25.0.linux-amd64.tar.gz
 
-# Install Tdlib
-# WORKDIR /tmp
-# RUN git clone https://github.com/tdlib/td.git
-# WORKDIR /tmp/td
-# RUN rm -rf build && mkdir build && cd build && \
-#     CXXFLAGS="-stdlib=libc++" \
-#     CC=/usr/bin/clang-18 \
-#     CXX=/usr/bin/clang++-18 \
-#     cmake -DCMAKE_BUILD_TYPE=Release \
-#           -DCMAKE_INSTALL_PREFIX:PATH=/usr/local \
-#           .. && \
-#     cmake --build . --target install -j$(nproc)
+ENV PATH="/usr/local/go/bin:$PATH"
+ENV GOPATH="/go"
+ENV GOBIN="/go/bin"
+
+RUN mkdir -p /go
+
+RUN go install github.com/swaggo/swag/cmd/swag@latest
+
+ENV PATH="/go/bin:$PATH"
+
+RUN go version && which swag && swag --version
+
+WORKDIR /tmp
+RUN git clone https://github.com/tdlib/td.git
+WORKDIR /tmp/td
+RUN rm -rf build && mkdir build && cd build && \
+    CXXFLAGS="-stdlib=libc++" \
+    CC=/usr/bin/clang-18 \
+    CXX=/usr/bin/clang++-18 \
+    cmake -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX:PATH=/usr/local \
+          .. && \
+    cmake --build . --target install -j$(nproc)
 
 WORKDIR /app
 COPY . .
 
 ENV CGO_ENABLED=1 \
     CGO_CFLAGS="-I/usr/local/include" \
-    CGO_LDFLAGS="-L/usr/local/lib -ltdjson -Wl,-rpath,/usr/local/lib" \
-    GOOS=linux \
-    GOARCH=amd64
+    CGO_LDFLAGS="-L/usr/local/lib -ltdjson -Wl,-rpath,/usr/local/lib"
 
-RUN go build -o main ./cmd/telegram-client
+RUN swag init -g ./cmd/main.go -o ./docs --quiet
+
+RUN go build -o main ./cmd
+
+EXPOSE 8080
 
 CMD ["./main"]
