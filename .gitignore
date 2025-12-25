@@ -12,6 +12,7 @@ tdlib-files/
 *.test
 *.out
 telegram-client
+vendor
 
 # IDE
 .idea/

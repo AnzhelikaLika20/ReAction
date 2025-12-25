@@ -1,6 +1,205 @@
+definitions:
+  handlers.CodeRequest:
+    description: Запрос для отправки кода подтверждения из Telegram
+    properties:
+      code:
+        example: "12345"
+        type: string
+    required:
+    - code
+    type: object
+  handlers.ErrorResponse:
+    description: Структура для возврата ошибок
+    properties:
+      error:
+        example: error message
+        type: string
+    type: object
+  handlers.PasswordRequest:
+    description: Запрос для отправки пароля двухфакторной аутентификации
+    properties:
+      password:
+        example: my2fapassword
+        type: string
+    required:
+    - password
+    type: object
+  handlers.PhoneRequest:
+    description: Запрос для отправки номера телефона при авторизации
+    properties:
+      phone_number:
+        example: "+1234567890"
+        type: string
+    required:
+    - phone_number
+    type: object
+  telegram.AuthState:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      password:
+        type: string
+      phone_number:
+        type: string
+      state:
+        type: string
+      updated_at:
+        type: string
+    type: object
 info:
   contact: {}
 paths:
+  /auth/{id}/code:
+    post:
+      consumes:
+      - application/json
+      description: Отправляет код подтверждения из Telegram
+      parameters:
+      - description: Auth session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Verification code
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.CodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Successful response
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Установить код подтверждения
+      tags:
+      - auth
+  /auth/{id}/password:
+    post:
+      consumes:
+      - application/json
+      description: Отправляет пароль двухфакторной аутентификации
+      parameters:
+      - description: Auth session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.PasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Successful response
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Установить пароль
+      tags:
+      - auth
+  /auth/{id}/phone:
+    post:
+      consumes:
+      - application/json
+      description: Отправляет номер телефона для авторизации
+      parameters:
+      - description: Auth session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Phone number
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.PhoneRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Successful response
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Установить номер телефона
+      tags:
+      - auth
+  /auth/{id}/status:
+    get:
+      description: Возвращает текущее состояние авторизации
+      parameters:
+      - description: Auth session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/telegram.AuthState'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Получить статус авторизации
+      tags:
+      - auth
+  /auth/start:
+    post:
+      consumes:
+      - application/json
+      description: Создает новую сессию авторизации
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Successful response
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Начать авторизацию
+      tags:
+      - auth
   /ping:
     get:
       description: endpoint для проверки что сервер работает
