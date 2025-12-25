@@ -12,6 +12,7 @@ type Listener struct {
 	messageCh chan *Message
 	handlers  []HandlerFunc
 	isRunning bool
+	cancel    context.CancelFunc
 }
 
 func NewListener(client *client.Client) *Listener {
@@ -29,6 +30,8 @@ func (l *Listener) Start(ctx context.Context) {
 
 	l.isRunning = true
 	listener := l.client.GetListener()
+	ctx, cancel := context.WithCancel(ctx)
+	l.cancel = cancel
 
 	go func() {
 		defer close(l.messageCh)
@@ -106,4 +109,11 @@ func extractText(msg *client.Message) string {
 		return "[" + msg.Content.MessageContentType() + "]"
 	}
 	return ""
+}
+
+func (l *Listener) Stop() {
+	if l.isRunning && l.cancel != nil {
+		l.cancel()
+		l.isRunning = false
+	}
 }

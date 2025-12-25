@@ -5,45 +5,51 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/zelenin/go-tdlib/client"
 )
 
 type Client struct {
-	tdlibClient *client.Client
-	listener    *Listener
-	config      config.TelegramConfig
-	isRunning   bool
+	tdlibClient   *client.Client
+	listener      *Listener
+	config        config.TelegramConfig
+	isRunning     bool
+	mu            sync.RWMutex
+	authSessionID string
 }
 
-func NewClient(cfg config.TelegramConfig) (*Client, error) {
-	if err := SetupLogging(); err != nil {
+func setupLogging() error {
+	_, err := client.SetLogVerbosityLevel(&client.SetLogVerbosityLevelRequest{
+		NewVerbosityLevel: 1,
+	})
+	return err
+}
+
+func NewClientWithHTTPAuth(sessionID string, cfg config.TelegramConfig, authManager *AuthStateManager) (*Client, *SimpleAuthorizer, error) {	
+	if err := setupLogging(); err != nil {
 		log.Printf("Warning: failed to setup logging: %v", err)
 	}
 
-	tdlibConfig := DefaultTDLibConfig(cfg)
-	authorizer := client.ClientAuthorizer(tdlibConfig)
-	go client.CliInteractor(authorizer)
-
+	authorizer := NewSimpleAuthorizer(cfg)
+	authManager.RegisterAuthorizer(sessionID, authorizer)
+	
 	tdlibClient, err := client.NewClient(authorizer)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create client: %w", err)
+		return nil, nil, fmt.Errorf("failed to create client: %w", err)
 	}
 
 	return &Client{
-		tdlibClient: tdlibClient,
-		config:      cfg,
-		listener:    NewListener(tdlibClient),
-	}, nil
+		tdlibClient:   tdlibClient,
+		config:        cfg,
+		listener:      NewListener(tdlibClient),
+		authSessionID: sessionID,
+	}, authorizer, nil
 }
 
-func (c *Client) Start(ctx context.Context) error {
+func (c *Client) StartWithSession(ctx context.Context, sessionID string) error {
 	if c.isRunning {
 		return nil
-	}
-
-	if err := c.verifyAuth(); err != nil {
-		return err
 	}
 
 	c.listener.Start(ctx)
@@ -55,38 +61,13 @@ func (c *Client) Start(ctx context.Context) error {
 func (c *Client) Stop() {
 	if c.isRunning {
 		c.isRunning = false
+		if c.listener != nil {
+			c.listener.Stop()
+		}
+		log.Printf("Client stopped for session %s", c.authSessionID)
 	}
-}
-
-func (c *Client) GetMe() (*client.User, error) {
-	return c.tdlibClient.GetMe()
-}
-
-func (c *Client) GetChats(limit int32) ([]int64, error) {
-	chats, err := c.tdlibClient.GetChats(&client.GetChatsRequest{
-		Limit: limit,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return chats.ChatIds, nil
-}
-
-func (c *Client) GetChatInfo(chatID int64) (*client.Chat, error) {
-	return c.tdlibClient.GetChat(&client.GetChatRequest{
-		ChatId: chatID,
-	})
 }
 
 func (c *Client) RegisterMessageHandler(handler HandlerFunc) {
 	c.listener.RegisterHandler(handler)
-}
-
-func (c *Client) Messages() <-chan *Message {
-	return c.listener.Messages()
-}
-
-func (c *Client) verifyAuth() error {
-	_, err := c.GetMe()
-	return err
 }
