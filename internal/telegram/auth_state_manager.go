@@ -65,20 +65,6 @@ func (m *AuthStateManager) GetAuthState(id string) (*AuthState, bool) {
 	return state, exists
 }
 
-func (m *AuthStateManager) UpdateAuthState(id string, updateFn func(*AuthState)) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	state, exists := m.states[id]
-	if !exists {
-		return false
-	}
-
-	updateFn(state)
-	state.UpdatedAt = time.Now()
-	return true
-}
-
 func (m *AuthStateManager) RegisterAuthorizer(sessionID string, authorizer *SimpleAuthorizer) {	
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -191,25 +177,6 @@ func (m *AuthStateManager) SetPassword(id, password string) error {
 		state.State = "waiting_for_password"
 		return fmt.Errorf("timeout sending password")
 	}
-}
-
-func (m *AuthStateManager) WaitForReady(id string, timeout time.Duration) (bool, error) {
-	start := time.Now()
-	
-	for time.Since(start) < timeout {
-		state, exists := m.GetAuthState(id)
-		if !exists {
-			return false, fmt.Errorf("auth state not found")
-		}
-		
-		if state.State == "ready" {
-			return true, nil
-		}
-		
-		time.Sleep(500 * time.Millisecond)
-	}
-	
-	return false, fmt.Errorf("timeout waiting for authorization")
 }
 
 func (m *AuthStateManager) UpdateState(id string, authState client.AuthorizationState) error {
