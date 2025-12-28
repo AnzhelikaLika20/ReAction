@@ -41,16 +41,16 @@ func (a *SimpleAuthorizer) Handle(tdlibClient *client.Client, state client.Autho
 	switch state.AuthorizationStateType() {
 	case client.TypeAuthorizationStateWaitTdlibParameters:
 		_, err := tdlibClient.SetTdlibParameters(&client.SetTdlibParametersRequest{
-			UseFileDatabase:        true,
-			UseChatInfoDatabase:    true,
-			UseMessageDatabase:     true,
-			UseSecretChats:         false,
-			SystemLanguageCode:           "en",
-			DeviceModel:                  "Server",
-			SystemVersion:                "1.0",
-			ApplicationVersion:           "1.0",   
-			ApiId:                  a.cfg.APIID,
-			ApiHash:                a.cfg.APIHash,
+			UseFileDatabase:     true,
+			UseChatInfoDatabase: true,
+			UseMessageDatabase:  true,
+			UseSecretChats:      false,
+			SystemLanguageCode:  "en",
+			DeviceModel:         "Server",
+			SystemVersion:       "1.0",
+			ApplicationVersion:  "1.0",
+			ApiId:               a.cfg.APIID,
+			ApiHash:             a.cfg.APIHash,
 		})
 		if err != nil {
 			log.Printf("Failed to set TDLib parameters: %v", err)
@@ -122,27 +122,27 @@ func (a *SimpleAuthorizer) Handle(tdlibClient *client.Client, state client.Autho
 	case client.TypeAuthorizationStateClosed:
 		log.Printf("Authorization closed")
 		return nil
-		
+
 	case client.TypeAuthorizationStateWaitEmailAddress:
 		log.Printf("Email authorization not supported")
 		return errors.New("email authorization not supported")
-		
+
 	case client.TypeAuthorizationStateWaitEmailCode:
 		log.Printf("Email code authorization not supported")
 		return errors.New("email code authorization not supported")
-		
+
 	case client.TypeAuthorizationStateWaitOtherDeviceConfirmation:
 		log.Printf("Other device confirmation not supported")
 		return errors.New("other device confirmation not supported")
-		
+
 	case client.TypeAuthorizationStateWaitRegistration:
 		log.Printf("Registration not supported")
 		return errors.New("registration not supported")
-		
+
 	case client.TypeAuthorizationStateLoggingOut:
 		log.Printf("Logging out")
 		return nil
-		
+
 	case client.TypeAuthorizationStateClosing:
 		log.Printf("Closing")
 		return nil

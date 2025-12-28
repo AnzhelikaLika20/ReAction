@@ -45,14 +45,14 @@ type ErrorResponse struct {
 func StartAuth(c *gin.Context, authManager *telegram.AuthStateManager, cfg config.TelegramConfig) {
 	authState := authManager.CreateAuthState()
 
-	go func(sessionID string) {		
+	go func(sessionID string) {
 		log.Printf("Creating Telegram client for session %s", sessionID)
 		_, _, err := telegram.NewClientWithHTTPAuth(sessionID, cfg, authManager)
 		if err != nil {
 			log.Printf("ERROR: Failed to create Telegram client for session %s: %v", sessionID, err)
 			return
 		}
-		
+
 		log.Printf("Telegram client created successfully for session %s", sessionID)
 	}(authState.ID)
 
@@ -191,7 +191,6 @@ func GetAuthStatus(c *gin.Context, authManager *telegram.AuthStateManager) {
 	c.JSON(http.StatusOK, state)
 }
 
-
 // RegisterAuthRoutes регистрирует маршруты авторизации
 // @Summary Регистрация маршрутов авторизации
 // @Description Регистрирует все конечные точки API для авторизации
@@ -199,19 +198,19 @@ func RegisterAuthRoutes(router *gin.Engine, authManager *telegram.AuthStateManag
 	router.POST("/auth/start", func(c *gin.Context) {
 		StartAuth(c, authManager, cfg)
 	})
-	
+
 	router.POST("/auth/:id/phone", func(c *gin.Context) {
 		SetPhoneNumber(c, authManager)
 	})
-	
+
 	router.POST("/auth/:id/code", func(c *gin.Context) {
 		SetCode(c, authManager)
 	})
-	
+
 	router.POST("/auth/:id/password", func(c *gin.Context) {
 		SetPassword(c, authManager)
 	})
-	
+
 	router.GET("/auth/:id/status", func(c *gin.Context) {
 		GetAuthStatus(c, authManager)
 	})

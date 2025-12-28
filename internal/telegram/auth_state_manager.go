@@ -65,18 +65,18 @@ func (m *AuthStateManager) GetAuthState(id string) (*AuthState, bool) {
 	return state, exists
 }
 
-func (m *AuthStateManager) RegisterAuthorizer(sessionID string, authorizer *SimpleAuthorizer) {	
+func (m *AuthStateManager) RegisterAuthorizer(sessionID string, authorizer *SimpleAuthorizer) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.authorizers[sessionID] = authorizer
-	
+
 	go m.monitorAuthState(sessionID, authorizer)
 }
 
 func (m *AuthStateManager) monitorAuthState(sessionID string, authorizer *SimpleAuthorizer) {
 	for state := range authorizer.State {
 		log.Printf("Session %s: Received auth state: %T", sessionID, state)
-		
+
 		if err := m.UpdateState(sessionID, state); err != nil {
 			log.Printf("Failed to update auth state: %v", err)
 		}
@@ -84,19 +84,19 @@ func (m *AuthStateManager) monitorAuthState(sessionID string, authorizer *Simple
 	log.Printf("State monitoring stopped for session %s", sessionID)
 }
 
-func (m *AuthStateManager) SetPhoneNumber(id, phoneNumber string) error {	
+func (m *AuthStateManager) SetPhoneNumber(id, phoneNumber string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	state, exists := m.states[id]
 	if !exists {
 		return fmt.Errorf("auth state not found")
 	}
-	
+
 	if state.State != "waiting_for_phone" {
 		return fmt.Errorf("wrong auth state: %s, expected waiting_for_phone", state.State)
 	}
-	
+
 	state.PhoneNumber = phoneNumber
 	state.State = "waiting_for_code"
 	state.UpdatedAt = time.Now()
@@ -118,7 +118,7 @@ func (m *AuthStateManager) SetPhoneNumber(id, phoneNumber string) error {
 func (m *AuthStateManager) SetCode(id, code string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	state, exists := m.states[id]
 	if !exists {
 		return fmt.Errorf("auth state not found")
@@ -127,7 +127,7 @@ func (m *AuthStateManager) SetCode(id, code string) error {
 	if state.State != "waiting_for_code" {
 		return fmt.Errorf("wrong auth state: %s, expected waiting_for_code", state.State)
 	}
-	
+
 	state.Code = code
 	state.State = "processing"
 	state.UpdatedAt = time.Now()
@@ -150,7 +150,7 @@ func (m *AuthStateManager) SetCode(id, code string) error {
 func (m *AuthStateManager) SetPassword(id, password string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	state, exists := m.states[id]
 	if !exists {
 		return fmt.Errorf("auth state not found")
@@ -159,7 +159,7 @@ func (m *AuthStateManager) SetPassword(id, password string) error {
 	if state.State != "waiting_for_password" {
 		return fmt.Errorf("wrong auth state: %s, expected waiting_for_password", state.State)
 	}
-	
+
 	state.Password = password
 	state.State = "processing"
 	state.UpdatedAt = time.Now()
@@ -182,7 +182,7 @@ func (m *AuthStateManager) SetPassword(id, password string) error {
 func (m *AuthStateManager) UpdateState(id string, authState client.AuthorizationState) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	state, exists := m.states[id]
 	if !exists {
 		return fmt.Errorf("auth state not found")
@@ -192,27 +192,27 @@ func (m *AuthStateManager) UpdateState(id string, authState client.Authorization
 	case *client.AuthorizationStateWaitPhoneNumber:
 		state.State = "waiting_for_phone"
 		log.Printf("Auth state %s: waiting for phone number", id)
-		
+
 	case *client.AuthorizationStateWaitCode:
 		state.State = "waiting_for_code"
 		log.Printf("Auth state %s: waiting for code", id)
-		
+
 	case *client.AuthorizationStateWaitPassword:
 		state.State = "waiting_for_password"
 		log.Printf("Auth state %s: waiting for password", id)
-		
+
 	case *client.AuthorizationStateReady:
 		state.State = "ready"
 		log.Printf("Auth state %s: authorization ready", id)
-		
+
 	case *client.AuthorizationStateClosed:
 		state.State = "closed"
 		log.Printf("Auth state %s: closed", id)
-		
+
 	default:
 		log.Printf("Auth state %s: received unknown state type: %T", id, authState)
 	}
-	
+
 	state.UpdatedAt = time.Now()
 	return nil
 }

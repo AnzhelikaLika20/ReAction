@@ -9,7 +9,7 @@ import (
 type AppConfig struct {
 	Telegram TelegramConfig
 	Logging  LoggingConfig
-	Server ServerConfig
+	Server   ServerConfig
 }
 
 type ServerConfig struct {
