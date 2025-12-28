@@ -1,10 +1,10 @@
 package telegram
 
 import (
-	"context"
-	"log"
+    "context"
+    "log"
 
-	"github.com/zelenin/go-tdlib/client"
+    "github.com/zelenin/go-tdlib/client"
 )
 
 type Listener struct {
@@ -12,7 +12,7 @@ type Listener struct {
 	messageCh chan *Message
 	handlers  []HandlerFunc
 	isRunning bool
-	cancel    context.CancelFunc
+    cancel    context.CancelFunc
 }
 
 func NewListener(client *client.Client) *Listener {
@@ -23,74 +23,126 @@ func NewListener(client *client.Client) *Listener {
 	}
 }
 
+func (l *Listener) getChatInfo(chatID int64) (string, string) {
+    chat, err := l.client.GetChat(&client.GetChatRequest{ChatId: chatID})
+    if err != nil {
+        log.Printf("Error getting chat info: %v", err)
+        return "", ""
+    }
+    return chat.Title, string(chat.Type.ChatTypeType())
+}
+
+func (l *Listener) getUserInfo(userID int64) *User {
+    user, err := l.client.GetUser(&client.GetUserRequest{UserId: userID})
+    if err != nil {
+        log.Printf("Error getting user info: %v", err)
+        return &User{ID: userID}
+    }
+    
+    return &User{
+        ID:        user.Id,
+        FirstName: user.FirstName,
+        LastName:  user.LastName,
+    }
+}
+
 func (l *Listener) Start(ctx context.Context) {
-	if l.isRunning {
-		return
-	}
+    if l.isRunning {
+        return
+    }
 
-	l.isRunning = true
-	listener := l.client.GetListener()
-	ctx, cancel := context.WithCancel(ctx)
-	l.cancel = cancel
+    l.isRunning = true
+    listener := l.client.GetListener()
+    ctx, cancel := context.WithCancel(ctx)
+    l.cancel = cancel
 
-	go func() {
-		defer close(l.messageCh)
-		defer listener.Close()
+    go func() {
+        defer func() {
+            close(l.messageCh)
+            listener.Close()
+            l.isRunning = false
+        }()
 
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case update, ok := <-listener.Updates:
-				if !ok {
-					return
-				}
-				l.handleUpdate(update)
-			}
-		}
-	}()
-}
+		log.Println("Listener started, waiting for updates...")
 
-func (l *Listener) RegisterHandler(handler HandlerFunc) {
-	l.handlers = append(l.handlers, handler)
-}
-
-func (l *Listener) Messages() <-chan *Message {
-	return l.messageCh
+        for {
+            select {
+            case <-ctx.Done():
+				log.Println("Listener context cancelled")
+                return
+            case update, ok := <-listener.Updates:
+                if !ok {
+					log.Println("Listener updates channel closed")
+                    return
+                }
+                l.handleUpdate(update)
+            }
+        }
+    }()
 }
 
 func (l *Listener) handleUpdate(update client.Type) {
-	if update.GetClass() != client.ClassUpdate {
-		return
-	}
+    if update.GetClass() != client.ClassUpdate {
+        return
+    }
 
-	switch update.GetType() {
-	case client.TypeUpdateNewMessage:
-		l.handleNewMessage(update.(*client.UpdateNewMessage))
-	}
+    switch update.GetType() {
+    case client.TypeUpdateNewMessage:
+        l.handleNewMessage(update.(*client.UpdateNewMessage))
+    }
 }
 
 func (l *Listener) handleNewMessage(update *client.UpdateNewMessage) {
-	message := convertMessage(update.Message)
+    message := convertMessage(update.Message)
+    
+    chatTitle, chatType := l.getChatInfo(message.ChatID)
+    message.ChatTitle = chatTitle
+    message.ChatType = chatType
+    
+    if message.SenderID > 0 {
+        user := l.getUserInfo(message.SenderID)
+        if user != nil {
+        }
+    }
+    
+    direction := "Received"
+    if message.IsOutgoing {
+        direction = "Sent"
+    }
+    
+    log.Printf("[MESSAGE] %s: Chat '%s' (%s) - %s", 
+        direction, message.ChatTitle, message.ChatType, message.Text)
 
-	select {
-	case l.messageCh <- message:
-	default:
-		log.Printf("Message channel is full, dropping message")
-	}
+    select {
+    case l.messageCh <- message:
+    default:
+        log.Printf("Message channel is full, dropping message")
+    }
 
-	for _, handler := range l.handlers {
-		go handler(message)
-	}
+    for _, handler := range l.handlers {
+        go handler(message)
+    }
 }
 
 func convertMessage(msg *client.Message) *Message {
-	return &Message{
-		ID:         msg.Id,
-		ChatID:     msg.ChatId,
-		Text:       extractText(msg),
-		IsOutgoing: msg.IsOutgoing,
-	}
+    senderID := int64(0)
+    if msg.SenderId != nil {
+        switch msg.SenderId.MessageSenderType() {
+        case client.TypeMessageSenderUser:
+            senderID = msg.SenderId.(*client.MessageSenderUser).UserId
+        case client.TypeMessageSenderChat:
+            senderID = msg.SenderId.(*client.MessageSenderChat).ChatId
+        }
+    }
+    
+    return &Message{
+        ID:         msg.Id,
+        ChatID:     msg.ChatId,
+        Text:       extractText(msg),
+        SenderID:   senderID,
+        Timestamp:  int64(msg.Date),
+        IsOutgoing: msg.IsOutgoing,
+    }
 }
 
 func extractText(msg *client.Message) string {

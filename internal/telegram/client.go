@@ -1,21 +1,24 @@
 package telegram
 
 import (
-	"ReAction/internal/config"
-	"fmt"
-	"log"
-	"sync"
+    "ReAction/internal/config"
+    "context"
+    "fmt"
+    "log"
+    "sync"
 
-	"github.com/zelenin/go-tdlib/client"
+    "github.com/zelenin/go-tdlib/client"
 )
 
 type Client struct {
-	tdlibClient   *client.Client
-	listener      *Listener
-	config        config.TelegramConfig
-	isRunning     bool
-	mu            sync.RWMutex
-	authSessionID string
+    tdlibClient   *client.Client
+    listener      *Listener
+    config        config.TelegramConfig
+    isRunning     bool
+    mu            sync.RWMutex
+    authSessionID string
+    ctx           context.Context
+    cancelFunc    context.CancelFunc
 }
 
 func setupLogging() error {
@@ -25,23 +28,31 @@ func setupLogging() error {
 	return err
 }
 
-func NewClientWithHTTPAuth(sessionID string, cfg config.TelegramConfig, authManager *AuthStateManager) (*Client, *SimpleAuthorizer, error) {	
-	if err := setupLogging(); err != nil {
-		log.Printf("Warning: failed to setup logging: %v", err)
-	}
+func NewClientWithHTTPAuth(sessionID string, cfg config.TelegramConfig, authManager *AuthStateManager) (*Client, *SimpleAuthorizer, error) {    
+    if err := setupLogging(); err != nil {
+        log.Printf("Warning: failed to setup logging: %v", err)
+    }
 
-	authorizer := NewSimpleAuthorizer(cfg)
-	authManager.RegisterAuthorizer(sessionID, authorizer)
-	
-	tdlibClient, err := client.NewClient(authorizer)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create client: %w", err)
-	}
+    authorizer := NewSimpleAuthorizer(cfg)
+    authManager.RegisterAuthorizer(sessionID, authorizer)
+    
+    tdlibClient, err := client.NewClient(authorizer)
+    if err != nil {
+        return nil, nil, fmt.Errorf("failed to create client: %w", err)
+    }
 
-	return &Client{
-		tdlibClient:   tdlibClient,
-		config:        cfg,
-		listener:      NewListener(tdlibClient),
-		authSessionID: sessionID,
-	}, authorizer, nil
+    ctx, cancel := context.WithCancel(context.Background())
+    
+    client := &Client{
+        tdlibClient:   tdlibClient,
+        config:        cfg,
+        listener:      NewListener(tdlibClient),
+        authSessionID: sessionID,
+        ctx:           ctx,
+        cancelFunc:    cancel,
+    }
+
+    client.listener.Start(ctx)
+
+    return client, authorizer, nil
 }

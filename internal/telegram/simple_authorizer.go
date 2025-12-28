@@ -30,12 +30,13 @@ func NewSimpleAuthorizer(cfg config.TelegramConfig) *SimpleAuthorizer {
 }
 
 func (a *SimpleAuthorizer) Handle(tdlibClient *client.Client, state client.AuthorizationState) error {
-	go func() {
-		select {
-		case a.State <- state:
-		default:
-		}
-	}()
+	log.Printf("[AUTHORIZER] Handling state: %s", state.AuthorizationStateType())
+	select {
+	case a.State <- state:
+		log.Printf("[AUTHORIZER] State %s sent to channel", state.AuthorizationStateType())
+	default:
+		log.Printf("[AUTHORIZER] Warning: state channel is full, dropping state")
+	}
 
 	switch state.AuthorizationStateType() {
 	case client.TypeAuthorizationStateWaitTdlibParameters:
