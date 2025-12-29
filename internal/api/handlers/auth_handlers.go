@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"ReAction/internal/config"
+	"ReAction/internal/kafka"
 	"ReAction/internal/telegram"
 	"log"
 	"net/http"
@@ -42,12 +43,12 @@ type ErrorResponse struct {
 // @Success 200 {object} map[string]interface{} "Successful response"
 // @Router /auth/start [post]
 // auth_handlers.go
-func StartAuth(c *gin.Context, authManager *telegram.AuthStateManager, cfg config.TelegramConfig) {
+func StartAuth(c *gin.Context, authManager *telegram.AuthStateManager, cfg config.TelegramConfig, kafkaProducer *kafka.Producer) {
 	authState := authManager.CreateAuthState()
 
 	go func(sessionID string) {
 		log.Printf("Creating Telegram client for session %s", sessionID)
-		_, _, err := telegram.NewClientWithHTTPAuth(sessionID, cfg, authManager)
+		_, _, err := telegram.NewClientWithHTTPAuth(sessionID, cfg, authManager, kafkaProducer)
 		if err != nil {
 			log.Printf("ERROR: Failed to create Telegram client for session %s: %v", sessionID, err)
 			return
@@ -194,9 +195,9 @@ func GetAuthStatus(c *gin.Context, authManager *telegram.AuthStateManager) {
 // RegisterAuthRoutes регистрирует маршруты авторизации
 // @Summary Регистрация маршрутов авторизации
 // @Description Регистрирует все конечные точки API для авторизации
-func RegisterAuthRoutes(router *gin.Engine, authManager *telegram.AuthStateManager, cfg config.TelegramConfig) {
+func RegisterAuthRoutes(router *gin.Engine, authManager *telegram.AuthStateManager, cfg config.TelegramConfig, kafkaProducer *kafka.Producer) {
 	router.POST("/auth/start", func(c *gin.Context) {
-		StartAuth(c, authManager, cfg)
+		StartAuth(c, authManager, cfg, kafkaProducer)
 	})
 
 	router.POST("/auth/:id/phone", func(c *gin.Context) {

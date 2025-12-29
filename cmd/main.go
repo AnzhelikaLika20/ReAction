@@ -3,6 +3,7 @@ package main
 import (
 	"ReAction/internal/api"
 	"ReAction/internal/config"
+	"ReAction/internal/kafka"
 	"ReAction/internal/telegram"
 	"fmt"
 	"log"
@@ -21,13 +22,21 @@ func main() {
 
 	cfg := config.MustLoad()
 
+	log.Println("Creating Kafka producer...")
+	kafkaProducer, err := kafka.NewProducer(cfg.Kafka)
+	if err != nil {
+		log.Panic("Failed to create Kafka producer: %v", err)
+	}
+	log.Println("Kafka producer created successfully")
+	defer kafkaProducer.Close()
+
 	authManager := telegram.NewAuthStateManager(
 		5*time.Minute,
 		30*time.Minute,
 	)
 
 	go func() {
-		api.RunHTTPServer(*cfg, authManager)
+		api.RunHTTPServer(*cfg, authManager, kafkaProducer)
 	}()
 
 	log.Println("Server started on :8080")

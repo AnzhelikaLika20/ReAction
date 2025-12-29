@@ -3,6 +3,7 @@ package api
 import (
 	"ReAction/internal/api/handlers"
 	"ReAction/internal/config"
+	"ReAction/internal/kafka"
 	"ReAction/internal/telegram"
 	"ReAction/internal/web"
 	"log"
@@ -22,14 +23,14 @@ type Server struct {
 // @host localhost:8080
 // @BasePath /
 // @schemes http
-func RunHTTPServer(cfg config.AppConfig, authManager *telegram.AuthStateManager) {
+func RunHTTPServer(cfg config.AppConfig, authManager *telegram.AuthStateManager, kafkaProducer *kafka.Producer) {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
 
 	web.RegisterSwaggerRoutes(router)
 
 	handlers.RegisterHealthRoutes(router)
-	handlers.RegisterAuthRoutes(router, authManager, cfg.Telegram)
+	handlers.RegisterAuthRoutes(router, authManager, cfg.Telegram, kafkaProducer)
 
 	log.Println("listening on http://localhost:" + cfg.Server.Port)
 	router.Run(":" + cfg.Server.Port)

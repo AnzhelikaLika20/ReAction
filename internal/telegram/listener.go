@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"ReAction/internal/kafka"
 	"context"
 	"log"
 
@@ -8,18 +9,22 @@ import (
 )
 
 type Listener struct {
-	client    *client.Client
-	messageCh chan *Message
-	handlers  []HandlerFunc
-	isRunning bool
-	cancel    context.CancelFunc
+	client        *client.Client
+	messageCh     chan *Message
+	handlers      []HandlerFunc
+	isRunning     bool
+	cancel        context.CancelFunc
+	kafkaProducer *kafka.Producer
+	sessionID     string
 }
 
-func NewListener(client *client.Client) *Listener {
+func NewListener(client *client.Client, sessionID string, kafkaProducer *kafka.Producer) *Listener {
 	return &Listener{
-		client:    client,
-		messageCh: make(chan *Message, 100),
-		handlers:  make([]HandlerFunc, 0),
+		client:        client,
+		messageCh:     make(chan *Message, 100),
+		handlers:      make([]HandlerFunc, 0),
+		kafkaProducer: kafkaProducer,
+		sessionID:     sessionID,
 	}
 }
 
@@ -113,6 +118,8 @@ func (l *Listener) handleNewMessage(update *client.UpdateNewMessage) {
 	log.Printf("[MESSAGE] %s: Chat '%s' (%s) - %s",
 		direction, message.ChatTitle, message.ChatType, message.Text)
 
+	l.sendToKafka(message, "message_new")
+
 	select {
 	case l.messageCh <- message:
 	default:
@@ -121,6 +128,38 @@ func (l *Listener) handleNewMessage(update *client.UpdateNewMessage) {
 
 	for _, handler := range l.handlers {
 		go handler(message)
+	}
+}
+
+func (l *Listener) sendToKafka(message *Message, eventType string) {
+	if l.kafkaProducer == nil {
+		log.Printf("[KAFKA] Producer not available, skipping send for event: %s", eventType)
+		return
+	}
+
+	messageEvent := kafka.MessageEvent{
+		SessionID:  l.sessionID,
+		EventType:  eventType,
+		MessageID:  message.ID,
+		ChatID:     message.ChatID,
+		ChatTitle:  message.ChatTitle,
+		ChatType:   message.ChatType,
+		Text:       message.Text,
+		SenderID:   message.SenderID,
+		IsOutgoing: message.IsOutgoing,
+		Timestamp:  message.Timestamp,
+	}
+
+	if l.kafkaProducer == nil {
+		return
+	}
+
+	err := l.kafkaProducer.SendTelegramMessage(l.sessionID, messageEvent)
+	if err != nil {
+		log.Printf("[KAFKA] Failed to send message event to Kafka: %v", err)
+	} else {
+		log.Printf("[KAFKA] Sent message event to Kafka: %s (message_id: %d)",
+			messageEvent.EventType, messageEvent.MessageID)
 	}
 }
 

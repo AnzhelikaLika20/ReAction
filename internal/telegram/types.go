@@ -2,6 +2,7 @@ package telegram
 
 type Message struct {
 	ID         int64
+	SessionID  string
 	ChatID     int64
 	Text       string
 	SenderID   int64
