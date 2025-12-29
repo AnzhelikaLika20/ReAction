@@ -30,10 +30,8 @@ func NewSimpleAuthorizer(cfg config.TelegramConfig) *SimpleAuthorizer {
 }
 
 func (a *SimpleAuthorizer) Handle(tdlibClient *client.Client, state client.AuthorizationState) error {
-	log.Printf("[AUTHORIZER] Handling state: %s", state.AuthorizationStateType())
 	select {
 	case a.State <- state:
-		log.Printf("[AUTHORIZER] State %s sent to channel", state.AuthorizationStateType())
 	default:
 		log.Printf("[AUTHORIZER] Warning: state channel is full, dropping state")
 	}
@@ -53,17 +51,16 @@ func (a *SimpleAuthorizer) Handle(tdlibClient *client.Client, state client.Autho
 			ApiHash:             a.cfg.APIHash,
 		})
 		if err != nil {
-			log.Printf("Failed to set TDLib parameters: %v", err)
+			log.Printf("[AUTHORIZER] Failed to set TDLib parameters: %v", err)
 			return err
 		}
-		log.Printf("TDLib parameters set successfully")
+		log.Printf("[AUTHORIZER] TDLib parameters set successfully")
 		return nil
 
 	case client.TypeAuthorizationStateWaitPhoneNumber:
-		log.Printf("Waiting for phone number")
 		select {
 		case phone := <-a.PhoneNumber:
-			log.Printf("Got phone number: %s", phone)
+			log.Printf("[AUTHORIZER] Got phone number: %s", phone)
 			_, err := tdlibClient.SetAuthenticationPhoneNumber(&client.SetAuthenticationPhoneNumberRequest{
 				PhoneNumber: phone,
 				Settings: &client.PhoneNumberAuthenticationSettings{
@@ -73,82 +70,77 @@ func (a *SimpleAuthorizer) Handle(tdlibClient *client.Client, state client.Autho
 				},
 			})
 			if err != nil {
-				log.Printf("Failed to set phone number: %v", err)
+				log.Printf("[AUTHORIZER] Failed to set phone number: %v", err)
 			}
 			return err
 		case <-time.After(5 * time.Minute):
-			log.Printf("Timeout waiting for phone number")
-			return errors.New("timeout waiting for phone number")
+			return errors.New("[AUTHORIZER] timeout waiting for phone number")
 		}
 
 	case client.TypeAuthorizationStateWaitCode:
-		log.Printf("Waiting for code")
 		select {
 		case code := <-a.Code:
-			log.Printf("Got code: %s", code)
+			log.Printf("[AUTHORIZER] Got code: %s", code)
 			_, err := tdlibClient.CheckAuthenticationCode(&client.CheckAuthenticationCodeRequest{
 				Code: code,
 			})
 			if err != nil {
-				log.Printf("Failed to check authentication code: %v", err)
+				log.Printf("[AUTHORIZER] Failed to check authentication code: %v", err)
 			}
 			return err
 		case <-time.After(5 * time.Minute):
-			log.Printf("Timeout waiting for code")
-			return errors.New("timeout waiting for code")
+			return errors.New("[AUTHORIZER] timeout waiting for code")
 		}
 
 	case client.TypeAuthorizationStateWaitPassword:
-		log.Printf("Waiting for password")
 		select {
 		case password := <-a.Password:
-			log.Printf("Got password")
+			log.Printf("[AUTHORIZER] Got password")
 			_, err := tdlibClient.CheckAuthenticationPassword(&client.CheckAuthenticationPasswordRequest{
 				Password: password,
 			})
 			if err != nil {
-				log.Printf("Failed to check authentication password: %v", err)
+				log.Printf("[AUTHORIZER] Failed to check authentication password: %v", err)
 			}
 			return err
 		case <-time.After(5 * time.Minute):
-			log.Printf("Timeout waiting for password")
-			return errors.New("timeout waiting for password")
+			return errors.New("[AUTHORIZER] timeout waiting for password")
 		}
 
 	case client.TypeAuthorizationStateReady:
-		log.Printf("Authorization ready!")
+		log.Printf("[AUTHORIZER] Authorization ready!")
 		return nil
 
 	case client.TypeAuthorizationStateClosed:
-		log.Printf("Authorization closed")
+		log.Printf("[AUTHORIZER] Authorization closed")
 		return nil
 
 	case client.TypeAuthorizationStateWaitEmailAddress:
-		log.Printf("Email authorization not supported")
-		return errors.New("email authorization not supported")
+		log.Printf("[AUTHORIZER] Email authorization not supported")
+		return errors.New("[AUTHORIZER] email authorization not supported")
 
 	case client.TypeAuthorizationStateWaitEmailCode:
-		log.Printf("Email code authorization not supported")
-		return errors.New("email code authorization not supported")
+		log.Printf("[AUTHORIZER] Email code authorization not supported")
+		return errors.New("[AUTHORIZER] email code authorization not supported")
 
 	case client.TypeAuthorizationStateWaitOtherDeviceConfirmation:
-		log.Printf("Other device confirmation not supported")
-		return errors.New("other device confirmation not supported")
+		log.Printf("[AUTHORIZER] Other device confirmation not supported")
+		return errors.New("[AUTHORIZER] other device confirmation not supported")
 
 	case client.TypeAuthorizationStateWaitRegistration:
-		log.Printf("Registration not supported")
-		return errors.New("registration not supported")
+		log.Printf("[AUTHORIZER] Registration not supported")
+		return errors.New("[AUTHORIZER] registration not supported")
 
 	case client.TypeAuthorizationStateLoggingOut:
-		log.Printf("Logging out")
+		log.Printf("[AUTHORIZER] Logging out")
 		return nil
 
 	case client.TypeAuthorizationStateClosing:
-		log.Printf("Closing")
+		log.Printf("[AUTHORIZER] Closing")
 		return nil
 	}
 
-	log.Printf("Unhandled authorization state: %s", state.AuthorizationStateType())
+	log.Printf("[AUTHORIZER] Unhandled authorization state: %s", state.AuthorizationStateType())
 	return nil
 }
 

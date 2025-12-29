@@ -31,7 +31,7 @@ func setupLogging() error {
 
 func NewClientWithHTTPAuth(sessionID string, cfg config.TelegramConfig, authManager *AuthStateManager, kafkaProducer *kafka.Producer) (*Client, *SimpleAuthorizer, error) {
 	if err := setupLogging(); err != nil {
-		log.Printf("Warning: failed to setup logging: %v", err)
+		log.Printf("[TELEGRAM] Warning: failed to setup logging: %v", err)
 	}
 
 	authorizer := NewSimpleAuthorizer(cfg)
