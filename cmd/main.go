@@ -5,6 +5,7 @@ import (
 	"ReAction/internal/config"
 	"ReAction/internal/kafka"
 	"ReAction/internal/telegram"
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -17,18 +18,23 @@ import (
 
 func main() {
 	if err := godotenv.Load(".env"); err != nil {
-		fmt.Println("Note: No .env file found")
+		fmt.Println("[APP] Note: No .env file found")
 	}
-
 	cfg := config.MustLoad()
 
-	log.Println("Creating Kafka producer...")
 	kafkaProducer, err := kafka.NewProducer(cfg.Kafka)
 	if err != nil {
-		log.Panic("Failed to create Kafka producer: %v", err)
+		log.Panic("[KAFKA] Failed to create Kafka producer: %v", err)
 	}
-	log.Println("Kafka producer created successfully")
 	defer kafkaProducer.Close()
+
+	kafkaConsumer, err := kafka.NewConsumer(cfg.Kafka)
+	if err != nil {
+		log.Panic("[KAFKA] Failed to create Kafka consumer: %v", err)
+	}
+	ctx, _ := context.WithCancel(context.Background())
+	kafkaConsumer.Start(ctx)
+	defer kafkaConsumer.Stop()
 
 	authManager := telegram.NewAuthStateManager(
 		5*time.Minute,
@@ -39,15 +45,12 @@ func main() {
 		api.RunHTTPServer(*cfg, authManager, kafkaProducer)
 	}()
 
-	log.Println("Server started on :8080")
-	log.Println("Use POST /auth/start to create a session, then use that session ID")
-
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	<-sigChan
-	log.Println("Shutting down...")
+	log.Println("[APP] Shutting down...")
 
 	time.Sleep(2 * time.Second)
-	log.Println("Shutdown complete")
+	log.Println("[APP] Shutdown complete")
 }
