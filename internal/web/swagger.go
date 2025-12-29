@@ -1,11 +1,11 @@
 package web
 
 import (
-	"net/http"
+	_ "ReAction/docs"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	_ "ReAction/docs"
+	"net/http"
 )
 
 const swaggerUIPage = `<!DOCTYPE html>
@@ -31,7 +31,7 @@ const swaggerUIPage = `<!DOCTYPE html>
 
 func RegisterSwaggerRoutes(router *gin.Engine) {
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-	
+
 	router.GET("/swagger", func(c *gin.Context) {
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.String(http.StatusOK, swaggerUIPage)

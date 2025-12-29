@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"ReAction/internal/kafka"
 	"context"
 	"log"
 
@@ -8,18 +9,45 @@ import (
 )
 
 type Listener struct {
-	client    *client.Client
-	messageCh chan *Message
-	handlers  []HandlerFunc
-	isRunning bool
-	cancel    context.CancelFunc
+	client        *client.Client
+	messageCh     chan *Message
+	handlers      []HandlerFunc
+	isRunning     bool
+	cancel        context.CancelFunc
+	kafkaProducer *kafka.Producer
+	sessionID     string
 }
 
-func NewListener(client *client.Client) *Listener {
+func NewListener(client *client.Client, sessionID string, kafkaProducer *kafka.Producer) *Listener {
 	return &Listener{
-		client:    client,
-		messageCh: make(chan *Message, 100),
-		handlers:  make([]HandlerFunc, 0),
+		client:        client,
+		messageCh:     make(chan *Message, 100),
+		handlers:      make([]HandlerFunc, 0),
+		kafkaProducer: kafkaProducer,
+		sessionID:     sessionID,
+	}
+}
+
+func (l *Listener) getChatInfo(chatID int64) (string, string) {
+	chat, err := l.client.GetChat(&client.GetChatRequest{ChatId: chatID})
+	if err != nil {
+		log.Printf("Error getting chat info: %v", err)
+		return "", ""
+	}
+	return chat.Title, string(chat.Type.ChatTypeType())
+}
+
+func (l *Listener) getUserInfo(userID int64) *User {
+	user, err := l.client.GetUser(&client.GetUserRequest{UserId: userID})
+	if err != nil {
+		log.Printf("Error getting user info: %v", err)
+		return &User{ID: userID}
+	}
+
+	return &User{
+		ID:        user.Id,
+		FirstName: user.FirstName,
+		LastName:  user.LastName,
 	}
 }
 
@@ -34,29 +62,28 @@ func (l *Listener) Start(ctx context.Context) {
 	l.cancel = cancel
 
 	go func() {
-		defer close(l.messageCh)
-		defer listener.Close()
+		defer func() {
+			close(l.messageCh)
+			listener.Close()
+			l.isRunning = false
+		}()
+
+		log.Println("Listener started, waiting for updates...")
 
 		for {
 			select {
 			case <-ctx.Done():
+				log.Println("Listener context cancelled")
 				return
 			case update, ok := <-listener.Updates:
 				if !ok {
+					log.Println("Listener updates channel closed")
 					return
 				}
 				l.handleUpdate(update)
 			}
 		}
 	}()
-}
-
-func (l *Listener) RegisterHandler(handler HandlerFunc) {
-	l.handlers = append(l.handlers, handler)
-}
-
-func (l *Listener) Messages() <-chan *Message {
-	return l.messageCh
 }
 
 func (l *Listener) handleUpdate(update client.Type) {
@@ -73,6 +100,26 @@ func (l *Listener) handleUpdate(update client.Type) {
 func (l *Listener) handleNewMessage(update *client.UpdateNewMessage) {
 	message := convertMessage(update.Message)
 
+	chatTitle, chatType := l.getChatInfo(message.ChatID)
+	message.ChatTitle = chatTitle
+	message.ChatType = chatType
+
+	if message.SenderID > 0 {
+		user := l.getUserInfo(message.SenderID)
+		if user != nil {
+		}
+	}
+
+	direction := "Received"
+	if message.IsOutgoing {
+		direction = "Sent"
+	}
+
+	log.Printf("[MESSAGE] %s: Chat '%s' (%s) - %s",
+		direction, message.ChatTitle, message.ChatType, message.Text)
+
+	l.sendToKafka(message, "message_new")
+
 	select {
 	case l.messageCh <- message:
 	default:
@@ -84,11 +131,55 @@ func (l *Listener) handleNewMessage(update *client.UpdateNewMessage) {
 	}
 }
 
+func (l *Listener) sendToKafka(message *Message, eventType string) {
+	if l.kafkaProducer == nil {
+		log.Printf("[KAFKA] Producer not available, skipping send for event: %s", eventType)
+		return
+	}
+
+	messageEvent := kafka.MessageEvent{
+		SessionID:  l.sessionID,
+		EventType:  eventType,
+		MessageID:  message.ID,
+		ChatID:     message.ChatID,
+		ChatTitle:  message.ChatTitle,
+		ChatType:   message.ChatType,
+		Text:       message.Text,
+		SenderID:   message.SenderID,
+		IsOutgoing: message.IsOutgoing,
+		Timestamp:  message.Timestamp,
+	}
+
+	if l.kafkaProducer == nil {
+		return
+	}
+
+	err := l.kafkaProducer.SendTelegramMessage(l.sessionID, messageEvent)
+	if err != nil {
+		log.Printf("[KAFKA] Failed to send message event to Kafka: %v", err)
+	} else {
+		log.Printf("[KAFKA] Sent message event to Kafka: %s (message_id: %d)",
+			messageEvent.EventType, messageEvent.MessageID)
+	}
+}
+
 func convertMessage(msg *client.Message) *Message {
+	senderID := int64(0)
+	if msg.SenderId != nil {
+		switch msg.SenderId.MessageSenderType() {
+		case client.TypeMessageSenderUser:
+			senderID = msg.SenderId.(*client.MessageSenderUser).UserId
+		case client.TypeMessageSenderChat:
+			senderID = msg.SenderId.(*client.MessageSenderChat).ChatId
+		}
+	}
+
 	return &Message{
 		ID:         msg.Id,
 		ChatID:     msg.ChatId,
 		Text:       extractText(msg),
+		SenderID:   senderID,
+		Timestamp:  int64(msg.Date),
 		IsOutgoing: msg.IsOutgoing,
 	}
 }

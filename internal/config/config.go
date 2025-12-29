@@ -9,7 +9,8 @@ import (
 type AppConfig struct {
 	Telegram TelegramConfig
 	Logging  LoggingConfig
-	Server ServerConfig
+	Server   ServerConfig
+	Kafka    KafkaConfig
 }
 
 type ServerConfig struct {
@@ -26,6 +27,13 @@ type LoggingConfig struct {
 	Format string
 }
 
+type KafkaConfig struct {
+	Broker        string `yaml:"broker" env:"KAFKA_BROKER" envSeparator:","`
+	TopicMessages string `yaml:"topic_messages" env:"KAFKA_TOPIC_MESSAGES" envDefault:"telegram-messages"`
+	TopicUpdates  string `yaml:"topic_updates" env:"KAFKA_TOPIC_UPDATES" envDefault:"telegram-updates"`
+	GroupID       string `yaml:"group_id" env:"KAFKA_GROUP_ID" envDefault:"reaction-telegram"`
+}
+
 func Load() (*AppConfig, error) {
 	cfg := &AppConfig{}
 
@@ -40,6 +48,15 @@ func Load() (*AppConfig, error) {
 	cfg.Logging.Format = GetEnv("LOG_FORMAT", "text")
 
 	cfg.Server.Port = GetEnv("SERVER_HTTP_PORT", "8080")
+
+	cfg.Kafka.Broker = GetEnv("KAFKA_BROKER", "kafka:9092")
+	if topic := os.Getenv("KAFKA_TOPIC_MESSAGES"); topic != "" {
+		cfg.Kafka.TopicMessages = topic
+	}
+	if topic := os.Getenv("KAFKA_TOPIC_UPDATES"); topic != "" {
+		cfg.Kafka.TopicUpdates = topic
+	}
+	cfg.Kafka.GroupID = "reaction-telegram"
 
 	return cfg, nil
 }

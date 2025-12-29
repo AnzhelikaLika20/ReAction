@@ -19,4 +19,7 @@ clean:
 swag:
 	swag init -g ./cmd/main.go -o ./docs --quiet
 
-up: swag run
+format:
+	gofmt -w .
+
+up: format swag run
