@@ -53,7 +53,6 @@ func (m *AuthStateManager) CreateAuthState() *AuthState {
 	}
 
 	m.states[id] = state
-	log.Printf("Created auth state: %s", id)
 	return state
 }
 
@@ -75,13 +74,10 @@ func (m *AuthStateManager) RegisterAuthorizer(sessionID string, authorizer *Simp
 
 func (m *AuthStateManager) monitorAuthState(sessionID string, authorizer *SimpleAuthorizer) {
 	for state := range authorizer.State {
-		log.Printf("Session %s: Received auth state: %T", sessionID, state)
-
 		if err := m.UpdateState(sessionID, state); err != nil {
-			log.Printf("Failed to update auth state: %v", err)
+			log.Printf("[TELEGRAM] Failed to update auth state: %v", err)
 		}
 	}
-	log.Printf("State monitoring stopped for session %s", sessionID)
 }
 
 func (m *AuthStateManager) SetPhoneNumber(id, phoneNumber string) error {
@@ -139,7 +135,6 @@ func (m *AuthStateManager) SetCode(id, code string) error {
 
 	select {
 	case authorizer.Code <- code:
-		log.Printf("Code sent for auth state %s", id)
 		return nil
 	case <-time.After(10 * time.Second):
 		state.State = "waiting_for_code"
@@ -171,7 +166,6 @@ func (m *AuthStateManager) SetPassword(id, password string) error {
 
 	select {
 	case authorizer.Password <- password:
-		log.Printf("Password sent for auth state %s", id)
 		return nil
 	case <-time.After(10 * time.Second):
 		state.State = "waiting_for_password"
@@ -189,28 +183,26 @@ func (m *AuthStateManager) UpdateState(id string, authState client.Authorization
 	}
 
 	switch authState.(type) {
+	case *client.AuthorizationStateWaitTdlibParameters:
+		state.State = "wait_tdlib_parameters"
+
 	case *client.AuthorizationStateWaitPhoneNumber:
 		state.State = "waiting_for_phone"
-		log.Printf("Auth state %s: waiting for phone number", id)
 
 	case *client.AuthorizationStateWaitCode:
 		state.State = "waiting_for_code"
-		log.Printf("Auth state %s: waiting for code", id)
 
 	case *client.AuthorizationStateWaitPassword:
 		state.State = "waiting_for_password"
-		log.Printf("Auth state %s: waiting for password", id)
 
 	case *client.AuthorizationStateReady:
 		state.State = "ready"
-		log.Printf("Auth state %s: authorization ready", id)
 
 	case *client.AuthorizationStateClosed:
 		state.State = "closed"
-		log.Printf("Auth state %s: closed", id)
 
 	default:
-		log.Printf("Auth state %s: received unknown state type: %T", id, authState)
+		log.Printf("[TELEGRAM] Auth state %s: received unknown state type: %T", id, authState)
 	}
 
 	state.UpdatedAt = time.Now()
@@ -234,7 +226,7 @@ func (m *AuthStateManager) cleanupExpiredStates() {
 					delete(m.authorizers, id)
 				}
 				delete(m.states, id)
-				log.Printf("Cleaned up expired auth state: %s", id)
+				log.Printf("[TELEGRAM] Cleaned up expired auth state: %s", id)
 			}
 		}
 		m.mu.Unlock()

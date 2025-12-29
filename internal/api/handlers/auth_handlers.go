@@ -47,14 +47,13 @@ func StartAuth(c *gin.Context, authManager *telegram.AuthStateManager, cfg confi
 	authState := authManager.CreateAuthState()
 
 	go func(sessionID string) {
-		log.Printf("Creating Telegram client for session %s", sessionID)
 		_, _, err := telegram.NewClientWithHTTPAuth(sessionID, cfg, authManager, kafkaProducer)
 		if err != nil {
-			log.Printf("ERROR: Failed to create Telegram client for session %s: %v", sessionID, err)
+			log.Printf("[TELEGRAM] ERROR: Failed to create Telegram client for session %s: %v", sessionID, err)
 			return
 		}
 
-		log.Printf("Telegram client created successfully for session %s", sessionID)
+		log.Printf("[TELEGRAM] Telegram client created successfully for session %s", sessionID)
 	}(authState.ID)
 
 	c.JSON(http.StatusOK, map[string]interface{}{

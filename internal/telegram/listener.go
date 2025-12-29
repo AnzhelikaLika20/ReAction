@@ -31,7 +31,7 @@ func NewListener(client *client.Client, sessionID string, kafkaProducer *kafka.P
 func (l *Listener) getChatInfo(chatID int64) (string, string) {
 	chat, err := l.client.GetChat(&client.GetChatRequest{ChatId: chatID})
 	if err != nil {
-		log.Printf("Error getting chat info: %v", err)
+		log.Printf("[TG LISTENER] Error getting chat info: %v", err)
 		return "", ""
 	}
 	return chat.Title, string(chat.Type.ChatTypeType())
@@ -40,7 +40,7 @@ func (l *Listener) getChatInfo(chatID int64) (string, string) {
 func (l *Listener) getUserInfo(userID int64) *User {
 	user, err := l.client.GetUser(&client.GetUserRequest{UserId: userID})
 	if err != nil {
-		log.Printf("Error getting user info: %v", err)
+		log.Printf("[TG LISTENER] Error getting user info: %v", err)
 		return &User{ID: userID}
 	}
 
@@ -68,16 +68,16 @@ func (l *Listener) Start(ctx context.Context) {
 			l.isRunning = false
 		}()
 
-		log.Println("Listener started, waiting for updates...")
+		log.Println("[TG LISTENER] Listener started, waiting for updates...")
 
 		for {
 			select {
 			case <-ctx.Done():
-				log.Println("Listener context cancelled")
+				log.Println("[TG LISTENER] Listener context cancelled")
 				return
 			case update, ok := <-listener.Updates:
 				if !ok {
-					log.Println("Listener updates channel closed")
+					log.Println("[TG LISTENER] Listener updates channel closed")
 					return
 				}
 				l.handleUpdate(update)
@@ -110,20 +110,12 @@ func (l *Listener) handleNewMessage(update *client.UpdateNewMessage) {
 		}
 	}
 
-	direction := "Received"
-	if message.IsOutgoing {
-		direction = "Sent"
-	}
-
-	log.Printf("[MESSAGE] %s: Chat '%s' (%s) - %s",
-		direction, message.ChatTitle, message.ChatType, message.Text)
-
 	l.sendToKafka(message, "message_new")
 
 	select {
 	case l.messageCh <- message:
 	default:
-		log.Printf("Message channel is full, dropping message")
+		log.Printf("[TG LISTENER] Message channel is full, dropping message")
 	}
 
 	for _, handler := range l.handlers {
