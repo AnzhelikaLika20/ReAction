@@ -28,10 +28,10 @@ type LoggingConfig struct {
 }
 
 type KafkaConfig struct {
-	Broker        string `yaml:"broker" env:"KAFKA_BROKER" envSeparator:","`
-	TopicMessages string `yaml:"topic_messages" env:"KAFKA_TOPIC_MESSAGES" envDefault:"telegram-messages"`
-	TopicUpdates  string `yaml:"topic_updates" env:"KAFKA_TOPIC_UPDATES" envDefault:"telegram-updates"`
-	GroupID       string `yaml:"group_id" env:"KAFKA_GROUP_ID" envDefault:"reaction-telegram"`
+	Broker           string `yaml:"broker" env:"KAFKA_BROKER" envSeparator:","`
+	ChatUpdatesTopic string `yaml:"topic_updates" env:"KAFKA_CHAT_UPDATES_TOPIC" envDefault:"chat-updates"`
+	UserActionsTopic string `yaml:"topic_updates" env:"KAFKA_USER_ACTIONS_TOPIC" envDefault:"user-actions"`
+	GroupID          string `yaml:"group_id" env:"KAFKA_GROUP_ID" envDefault:"reaction-telegram"`
 }
 
 func Load() (*AppConfig, error) {
@@ -50,11 +50,11 @@ func Load() (*AppConfig, error) {
 	cfg.Server.Port = GetEnv("SERVER_HTTP_PORT", "8080")
 
 	cfg.Kafka.Broker = GetEnv("KAFKA_BROKER", "kafka:9092")
-	if topic := os.Getenv("KAFKA_TOPIC_MESSAGES"); topic != "" {
-		cfg.Kafka.TopicMessages = topic
+	if topic := os.Getenv("KAFKA_USER_ACTIONS_TOPIC"); topic != "" {
+		cfg.Kafka.ChatUpdatesTopic = topic
 	}
-	if topic := os.Getenv("KAFKA_TOPIC_UPDATES"); topic != "" {
-		cfg.Kafka.TopicUpdates = topic
+	if topic := os.Getenv("KAFKA_CHAT_UPDATES_TOPIC"); topic != "" {
+		cfg.Kafka.UserActionsTopic = topic
 	}
 	cfg.Kafka.GroupID = "reaction-telegram"
 

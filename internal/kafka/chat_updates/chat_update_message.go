@@ -1,6 +1,6 @@
-package kafka
+package chat_updates
 
-type MessageEvent struct {
+type ChatUpdateMessageEvent struct {
 	SessionID  string `json:"session_id"`
 	EventType  string `json:"event_type"` // "message_new", "message_sent", "message_edited"
 	MessageID  int64  `json:"message_id"`

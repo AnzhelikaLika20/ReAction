@@ -3,7 +3,8 @@ package main
 import (
 	"ReAction/internal/api"
 	"ReAction/internal/config"
-	"ReAction/internal/kafka"
+	"ReAction/internal/kafka/chat_updates"
+	"ReAction/internal/kafka/user_actions"
 	"ReAction/internal/telegram"
 	"context"
 	"fmt"
@@ -22,19 +23,32 @@ func main() {
 	}
 	cfg := config.MustLoad()
 
-	kafkaProducer, err := kafka.NewProducer(cfg.Kafka)
+	userActionsProducer, err := user_actions.NewUserActionProducer(cfg.Kafka)
 	if err != nil {
 		log.Panic("[KAFKA] Failed to create Kafka producer: %v", err)
 	}
-	defer kafkaProducer.Close()
+	defer userActionsProducer.Close()
 
-	kafkaConsumer, err := kafka.NewConsumer(cfg.Kafka)
+	userActionsConsumer, err := user_actions.NewUserActionConsumer(cfg.Kafka)
 	if err != nil {
 		log.Panic("[KAFKA] Failed to create Kafka consumer: %v", err)
 	}
 	ctx, _ := context.WithCancel(context.Background())
-	kafkaConsumer.Start(ctx)
-	defer kafkaConsumer.Stop()
+	userActionsConsumer.Start(ctx)
+	defer userActionsConsumer.Stop()
+
+	chatUpdatesProducer, err := chat_updates.NewChatUpdatesProducer(cfg.Kafka)
+	if err != nil {
+		log.Panic("[KAFKA] Failed to create Kafka producer: %v", err)
+	}
+	defer chatUpdatesProducer.Close()
+
+	chatUpdatesConsumer, err := chat_updates.NewChatUpdatesConsumer(cfg.Kafka, userActionsProducer)
+	if err != nil {
+		log.Panic("[KAFKA] Failed to create Kafka consumer: %v", err)
+	}
+	chatUpdatesConsumer.Start(ctx)
+	defer chatUpdatesConsumer.Stop()
 
 	authManager := telegram.NewAuthStateManager(
 		5*time.Minute,
@@ -42,7 +56,7 @@ func main() {
 	)
 
 	go func() {
-		api.RunHTTPServer(*cfg, authManager, kafkaProducer)
+		api.RunHTTPServer(*cfg, authManager, chatUpdatesProducer)
 	}()
 
 	sigChan := make(chan os.Signal, 1)

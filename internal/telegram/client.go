@@ -2,7 +2,7 @@ package telegram
 
 import (
 	"ReAction/internal/config"
-	"ReAction/internal/kafka"
+	chat_updates "ReAction/internal/kafka/chat_updates"
 	"context"
 	"fmt"
 	"log"
@@ -29,7 +29,7 @@ func setupLogging() error {
 	return err
 }
 
-func NewClientWithHTTPAuth(sessionID string, cfg config.TelegramConfig, authManager *AuthStateManager, kafkaProducer *kafka.Producer) (*Client, *SimpleAuthorizer, error) {
+func NewClientWithHTTPAuth(sessionID string, cfg config.TelegramConfig, authManager *AuthStateManager, kafkaProducer *chat_updates.ChatUpdatesProducer) (*Client, *SimpleAuthorizer, error) {
 	if err := setupLogging(); err != nil {
 		log.Printf("[TELEGRAM] Warning: failed to setup logging: %v", err)
 	}
