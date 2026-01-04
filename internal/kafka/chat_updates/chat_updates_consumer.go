@@ -1,7 +1,8 @@
-package kafka
+package chat_updates
 
 import (
 	"ReAction/internal/config"
+	"ReAction/internal/kafka/user_actions"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,13 +14,14 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-type Consumer struct {
-	reader    *kafka.Reader
-	config    config.KafkaConfig
-	topic     string
-	isRunning bool
-	cancel    context.CancelFunc
-	mu        sync.RWMutex
+type ChatUpdatesConsumer struct {
+	reader             *kafka.Reader
+	config             config.KafkaConfig
+	topic              string
+	isRunning          bool
+	cancel             context.CancelFunc
+	mu                 sync.RWMutex
+	userActionProducer *user_actions.UserActionProducer
 }
 
 type ConversationMessage struct {
@@ -41,10 +43,10 @@ type ConversationMessage struct {
 	Partition       int       `json:"-"`
 }
 
-func NewConsumer(cfg config.KafkaConfig) (*Consumer, error) {
+func NewChatUpdatesConsumer(cfg config.KafkaConfig, user_actions_producer *user_actions.UserActionProducer) (*ChatUpdatesConsumer, error) {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:        []string{cfg.Broker},
-		Topic:          cfg.TopicMessages,
+		Topic:          cfg.ChatUpdatesTopic,
 		GroupID:        fmt.Sprintf("%s-message-processor", cfg.GroupID),
 		MinBytes:       10e3,
 		MaxBytes:       10e6,
@@ -53,18 +55,19 @@ func NewConsumer(cfg config.KafkaConfig) (*Consumer, error) {
 		MaxWait:        5 * time.Second,
 	})
 
-	c := &Consumer{
-		reader: reader,
-		config: cfg,
-		topic:  cfg.TopicMessages,
+	c := &ChatUpdatesConsumer{
+		reader:             reader,
+		config:             cfg,
+		topic:              cfg.ChatUpdatesTopic,
+		userActionProducer: user_actions_producer,
 	}
 
 	return c, nil
 }
 
-func (c *Consumer) Start(ctx context.Context) error {
+func (c *ChatUpdatesConsumer) Start(ctx context.Context) error {
 	if c.isRunning {
-		return fmt.Errorf("[CONSUMER] consumer is already running")
+		return fmt.Errorf("[CHAT-UPDATES] consumer is already running")
 	}
 
 	c.isRunning = true
@@ -75,15 +78,15 @@ func (c *Consumer) Start(ctx context.Context) error {
 		defer func() {
 			c.reader.Close()
 			c.isRunning = false
-			log.Printf("[CONSUMER] Message consumer stopped for topic: %s", c.topic)
+			log.Printf("[CHAT-UPDATES] Message consumer stopped for topic: %s", c.topic)
 		}()
 
-		log.Printf("[CONSUMER] Message consumer started for topic: %s", c.topic)
+		log.Printf("[CHAT-UPDATES] Message consumer started for topic: %s", c.topic)
 
 		for {
 			select {
 			case <-ctx.Done():
-				log.Printf("[CONSUMER] Consumer context cancelled for topic: %s", c.topic)
+				log.Printf("[CHAT-UPDATES] Consumer context cancelled for topic: %s", c.topic)
 				return
 			default:
 				msg, err := c.reader.FetchMessage(ctx)
@@ -91,7 +94,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 					if err == context.Canceled {
 						return
 					}
-					log.Printf("[CONSUMER] Error fetching message: %v", err)
+					log.Printf("[CHAT-UPDATES] Error fetching message: %v", err)
 					time.Sleep(2 * time.Second)
 					continue
 				}
@@ -99,7 +102,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 				c.processKafkaMessage(msg)
 
 				if err := c.reader.CommitMessages(ctx, msg); err != nil {
-					log.Printf("[CONSUMER] Error committing message: %v", err)
+					log.Printf("[CHAT-UPDATES] Error committing message: %v", err)
 				}
 			}
 		}
@@ -108,12 +111,12 @@ func (c *Consumer) Start(ctx context.Context) error {
 	return nil
 }
 
-func (c *Consumer) processKafkaMessage(msg kafka.Message) {
+func (c *ChatUpdatesConsumer) processKafkaMessage(msg kafka.Message) {
 	var conversationMsg ConversationMessage
 
 	if err := json.Unmarshal(msg.Value, &conversationMsg); err != nil {
-		log.Printf("[CONSUMER] Failed to unmarshal Kafka message: %v", err)
-		log.Printf("[CONSUMER] Raw message: %s", string(msg.Value))
+		log.Printf("[CHAT-UPDATES] Failed to unmarshal Kafka message: %v", err)
+		log.Printf("[CHAT-UPDATES] Raw message: %s", string(msg.Value))
 		return
 	}
 
@@ -121,9 +124,35 @@ func (c *Consumer) processKafkaMessage(msg kafka.Message) {
 	conversationMsg.Partition = msg.Partition
 
 	c.logMessage(&conversationMsg)
+
+	c.ScheduleActionIfNeeded(conversationMsg)
 }
 
-func (c *Consumer) logMessage(msg *ConversationMessage) {
+func (c *ChatUpdatesConsumer) ScheduleActionIfNeeded(msg ConversationMessage) {
+	if strings.Contains(strings.ToLower(msg.Text), "молоко") {
+		// TODO: поменять ключ шардирования
+		log.Printf("[CHAT-UPDATES] Found 'молоко' in message for %s", msg.SessionID)
+
+		if c.userActionProducer != nil && c.userActionProducer.IsReady() {
+			reminderAction, err := c.userActionProducer.ParseAndSendReminderFromText(
+				msg.SessionID,
+				msg.Text,
+			)
+
+			if err != nil {
+				log.Printf("[CHAT-UPDATES] Failed to create reminder: %v", err)
+			} else if reminderAction != nil {
+				log.Printf("[CHAT-UPDATES] Reminder created for %s: '%s'",
+					msg.SessionID,
+					reminderAction.Reminder.Title)
+			}
+		} else {
+			log.Printf("[CHAT-UPDATES] UserAction producer not available")
+		}
+	}
+}
+
+func (c *ChatUpdatesConsumer) logMessage(msg *ConversationMessage) {
 	messageType := "OUTGOING"
 	if !msg.IsOutgoing {
 		messageType = "INCOMING"
@@ -167,10 +196,10 @@ func formatSenderInfo(msg *ConversationMessage) string {
 	return fmt.Sprintf("User %d", msg.SenderID)
 }
 
-func (c *Consumer) Stop() {
+func (c *ChatUpdatesConsumer) Stop() {
 	if c.isRunning && c.cancel != nil {
 		c.cancel()
 		c.isRunning = false
-		log.Printf("[CONSUMER] Stopped message consumer for topic: %s", c.topic)
+		log.Printf("[CHAT-UPDATES] Stopped message consumer for topic: %s", c.topic)
 	}
 }

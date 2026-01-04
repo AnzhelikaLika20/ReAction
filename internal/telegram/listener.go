@@ -1,7 +1,7 @@
 package telegram
 
 import (
-	"ReAction/internal/kafka"
+	chat_updates "ReAction/internal/kafka/chat_updates"
 	"context"
 	"log"
 
@@ -14,11 +14,11 @@ type Listener struct {
 	handlers      []HandlerFunc
 	isRunning     bool
 	cancel        context.CancelFunc
-	kafkaProducer *kafka.Producer
+	kafkaProducer *chat_updates.ChatUpdatesProducer
 	sessionID     string
 }
 
-func NewListener(client *client.Client, sessionID string, kafkaProducer *kafka.Producer) *Listener {
+func NewListener(client *client.Client, sessionID string, kafkaProducer *chat_updates.ChatUpdatesProducer) *Listener {
 	return &Listener{
 		client:        client,
 		messageCh:     make(chan *Message, 100),
@@ -129,7 +129,7 @@ func (l *Listener) sendToKafka(message *Message, eventType string) {
 		return
 	}
 
-	messageEvent := kafka.MessageEvent{
+	messageEvent := chat_updates.ChatUpdateMessageEvent{
 		SessionID:  l.sessionID,
 		EventType:  eventType,
 		MessageID:  message.ID,

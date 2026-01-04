@@ -3,7 +3,7 @@ package api
 import (
 	"ReAction/internal/api/handlers"
 	"ReAction/internal/config"
-	"ReAction/internal/kafka"
+	chat_updates "ReAction/internal/kafka/chat_updates"
 	"ReAction/internal/telegram"
 	"ReAction/internal/web"
 	"log"
@@ -23,7 +23,7 @@ type Server struct {
 // @host localhost:8080
 // @BasePath /
 // @schemes http
-func RunHTTPServer(cfg config.AppConfig, authManager *telegram.AuthStateManager, kafkaProducer *kafka.Producer) {
+func RunHTTPServer(cfg config.AppConfig, authManager *telegram.AuthStateManager, kafkaProducer *chat_updates.ChatUpdatesProducer) {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
 

@@ -1,4 +1,4 @@
-package kafka
+package chat_updates
 
 import (
 	"ReAction/internal/config"
@@ -6,21 +6,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/segmentio/kafka-go"
 )
 
-type Producer struct {
+type ChatUpdatesProducer struct {
 	config  config.KafkaConfig
 	writers map[string]*kafka.Writer
 	mu      sync.RWMutex
 	isReady bool
 }
 
-func NewProducer(cfg config.KafkaConfig) (*Producer, error) {
-	conn, err := kafka.DialLeader(context.Background(), "tcp", cfg.Broker, cfg.TopicMessages, 0)
+func NewChatUpdatesProducer(cfg config.KafkaConfig) (*ChatUpdatesProducer, error) {
+	conn, err := kafka.DialLeader(context.Background(), "tcp", cfg.Broker, cfg.ChatUpdatesTopic, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Kafka at %s: %w", cfg.Broker, err)
 	}
@@ -28,20 +29,19 @@ func NewProducer(cfg config.KafkaConfig) (*Producer, error) {
 
 	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 
-	p := &Producer{
+	p := &ChatUpdatesProducer{
 		config:  cfg,
 		writers: make(map[string]*kafka.Writer),
 		isReady: true,
 	}
 
-	p.getWriter(cfg.TopicMessages)
-	p.getWriter(cfg.TopicUpdates)
+	p.getWriter(cfg.ChatUpdatesTopic)
 
 	log.Println("[KAFKA] Kafka producer created and ready")
 	return p, nil
 }
 
-func (p *Producer) getWriter(topic string) *kafka.Writer {
+func (p *ChatUpdatesProducer) getWriter(topic string) *kafka.Writer {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -78,7 +78,7 @@ func (p *Producer) getWriter(topic string) *kafka.Writer {
 	return writer
 }
 
-func (p *Producer) SendMessage(topic string, key string, value interface{}) error {
+func (p *ChatUpdatesProducer) SendMessage(topic string, key int64, value interface{}) error {
 	if !p.isReady {
 		return fmt.Errorf("producer is not ready")
 	}
@@ -93,7 +93,7 @@ func (p *Producer) SendMessage(topic string, key string, value interface{}) erro
 	defer cancel()
 
 	msg := kafka.Message{
-		Key:   []byte(key),
+		Key:   []byte(strconv.FormatInt(key, 10)),
 		Value: jsonData,
 		Time:  time.Now(),
 	}
@@ -101,11 +101,11 @@ func (p *Producer) SendMessage(topic string, key string, value interface{}) erro
 	return writer.WriteMessages(ctx, msg)
 }
 
-func (p *Producer) SendTelegramMessage(sessionID string, message interface{}) error {
-	return p.SendMessage(p.config.TopicMessages, sessionID, message)
+func (p *ChatUpdatesProducer) SendTelegramMessage(sessionID string, message ChatUpdateMessageEvent) error {
+	return p.SendMessage(p.config.ChatUpdatesTopic, message.ChatID, message)
 }
 
-func (p *Producer) Close() error {
+func (p *ChatUpdatesProducer) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
