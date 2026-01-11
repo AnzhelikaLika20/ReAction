@@ -11,6 +11,7 @@ type AppConfig struct {
 	Logging  LoggingConfig
 	Server   ServerConfig
 	Kafka    KafkaConfig
+	Database Database
 }
 
 type ServerConfig struct {
@@ -32,6 +33,14 @@ type KafkaConfig struct {
 	ChatUpdatesTopic string `yaml:"topic_updates" env:"KAFKA_CHAT_UPDATES_TOPIC" envDefault:"chat-updates"`
 	UserActionsTopic string `yaml:"topic_updates" env:"KAFKA_USER_ACTIONS_TOPIC" envDefault:"user-actions"`
 	GroupID          string `yaml:"group_id" env:"KAFKA_GROUP_ID" envDefault:"reaction-telegram"`
+}
+
+type Database struct {
+	Host     string
+	Port     string
+	User     string
+	Password string
+	DBName   string
 }
 
 func Load() (*AppConfig, error) {
@@ -57,6 +66,14 @@ func Load() (*AppConfig, error) {
 		cfg.Kafka.UserActionsTopic = topic
 	}
 	cfg.Kafka.GroupID = "reaction-telegram"
+
+	cfg.Database = Database{
+		Host:     GetEnv("DB_HOST", "localhost"),
+		Port:     GetEnv("DB_PORT", "5432"),
+		User:     GetEnv("DB_USER", "postgres"),
+		Password: GetEnv("DB_PASSWORD", "123456"),
+		DBName:   GetEnv("DB_NAME", "reaction"),
+	}
 
 	return cfg, nil
 }
