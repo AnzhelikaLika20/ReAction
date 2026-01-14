@@ -2,13 +2,14 @@ package main
 
 import (
 	"ReAction/internal/api"
+	"ReAction/internal/auth"
 	"ReAction/internal/config"
 	"ReAction/internal/kafka/chat_updates"
 	"ReAction/internal/kafka/user_actions"
+	"ReAction/internal/services"
 	"ReAction/internal/storage"
 	"ReAction/internal/telegram"
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -19,9 +20,12 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// @securityDefinitions.apikey Bearer
+// @in header
+// @name Authorization
 func main() {
 	if err := godotenv.Load(".env"); err != nil {
-		fmt.Println("[APP] Note: No .env file found")
+		log.Println("[APP] Note: No .env file found")
 	}
 	cfg := config.MustLoad()
 
@@ -37,6 +41,26 @@ func main() {
 	}
 	defer dbStorage.Close()
 	log.Printf("Database connected successfully")
+
+	userRepo := storage.NewUserRepository(dbStorage.Queries)
+	sessionRepo := storage.NewSessionRepository(dbStorage.Queries)
+
+	jwtService := auth.NewJWTService(
+		cfg.JWT.SecretKey,
+		cfg.JWT.TokenDuration,
+	)
+
+	authManager := telegram.NewAuthStateManager(
+		5*time.Minute,
+		30*time.Minute,
+	)
+
+	authService := services.NewAuthService(
+		jwtService,
+		userRepo,
+		sessionRepo,
+		authManager,
+	)
 
 	userActionsProducer, err := user_actions.NewUserActionProducer(cfg.Kafka)
 	if err != nil {
@@ -79,16 +103,11 @@ func main() {
 		chatUpdatesConsumer.Start(consumersCtx)
 	}()
 
-	authManager := telegram.NewAuthStateManager(
-		5*time.Minute,
-		30*time.Minute,
-	)
-
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		log.Printf("[HTTP] Starting server on port %s...", cfg.Server.Port)
-		api.RunHTTPServer(*cfg, authManager, chatUpdatesProducer)
+		api.RunHTTPServer(*cfg, authService, chatUpdatesProducer)
 	}()
 
 	sigChan := make(chan os.Signal, 1)

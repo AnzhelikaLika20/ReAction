@@ -9,19 +9,11 @@ import (
 	"context"
 )
 
-const cleanupOldSessions = `-- name: CleanupOldSessions :exec
-DELETE FROM sessions 
-WHERE created_at < NOW() - INTERVAL '30 days'
-`
-
-func (q *Queries) CleanupOldSessions(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, cleanupOldSessions)
-	return err
-}
-
 const createSession = `-- name: CreateSession :one
-INSERT INTO sessions (token_hash, phone_number) 
-VALUES ($1, $2) 
+INSERT INTO sessions (
+    token_hash,
+    phone_number
+) VALUES ($1, $2)
 RETURNING token_hash, phone_number, created_at
 `
 
@@ -57,40 +49,28 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, phoneNumber string) er
 	return err
 }
 
-const getSessionByTokenHash = `-- name: GetSessionByTokenHash :one
+const getSession = `-- name: GetSession :one
 SELECT token_hash, phone_number, created_at FROM sessions 
 WHERE token_hash = $1
 `
 
-func (q *Queries) GetSessionByTokenHash(ctx context.Context, tokenHash string) (Session, error) {
-	row := q.db.QueryRow(ctx, getSessionByTokenHash, tokenHash)
+func (q *Queries) GetSession(ctx context.Context, tokenHash string) (Session, error) {
+	row := q.db.QueryRow(ctx, getSession, tokenHash)
 	var i Session
 	err := row.Scan(&i.TokenHash, &i.PhoneNumber, &i.CreatedAt)
 	return i, err
 }
 
-const getSessionsByPhoneNumber = `-- name: GetSessionsByPhoneNumber :many
+const getSessionByPhone = `-- name: GetSessionByPhone :one
 SELECT token_hash, phone_number, created_at FROM sessions 
 WHERE phone_number = $1 
-ORDER BY created_at DESC
+ORDER BY created_at DESC 
+LIMIT 1
 `
 
-func (q *Queries) GetSessionsByPhoneNumber(ctx context.Context, phoneNumber string) ([]Session, error) {
-	rows, err := q.db.Query(ctx, getSessionsByPhoneNumber, phoneNumber)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Session
-	for rows.Next() {
-		var i Session
-		if err := rows.Scan(&i.TokenHash, &i.PhoneNumber, &i.CreatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+func (q *Queries) GetSessionByPhone(ctx context.Context, phoneNumber string) (Session, error) {
+	row := q.db.QueryRow(ctx, getSessionByPhone, phoneNumber)
+	var i Session
+	err := row.Scan(&i.TokenHash, &i.PhoneNumber, &i.CreatedAt)
+	return i, err
 }

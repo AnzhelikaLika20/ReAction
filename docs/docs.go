@@ -15,32 +15,44 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/auth/start": {
-            "post": {
-                "description": "Создает новую сессию авторизации",
-                "consumes": [
-                    "application/json"
+        "/auth/session/status": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
                 ],
+                "description": "Возвращает текущий статус сессии",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "auth"
                 ],
-                "summary": "Начать авторизацию",
+                "summary": "Получить статус сессии",
                 "responses": {
                     "200": {
-                        "description": "Successful response",
+                        "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/handlers.SessionResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
                         }
                     }
                 }
             }
         },
-        "/auth/{id}/code": {
+        "/auth/telegram/code": {
             "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
                 "description": "Отправляет код подтверждения из Telegram",
                 "consumes": [
                     "application/json"
@@ -54,13 +66,6 @@ const docTemplate = `{
                 "summary": "Установить код подтверждения",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Auth session ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
                         "description": "Verification code",
                         "name": "request",
                         "in": "body",
@@ -72,10 +77,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Successful response",
+                        "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/handlers.SessionResponse"
                         }
                     },
                     "400": {
@@ -84,8 +88,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
                     },
-                    "404": {
-                        "description": "Not Found",
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
@@ -93,8 +97,53 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/{id}/password": {
+        "/auth/telegram/init": {
             "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Создает Telegram клиент и обновляет статус сессии",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Инициализировать Telegram клиента",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.SessionResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/telegram/password": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
                 "description": "Отправляет пароль двухфакторной аутентификации",
                 "consumes": [
                     "application/json"
@@ -108,13 +157,6 @@ const docTemplate = `{
                 "summary": "Установить пароль",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Auth session ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
                         "description": "Password",
                         "name": "request",
                         "in": "body",
@@ -126,10 +168,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Successful response",
+                        "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/handlers.SessionResponse"
                         }
                     },
                     "400": {
@@ -138,8 +179,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
                     },
-                    "404": {
-                        "description": "Not Found",
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
@@ -147,9 +188,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/{id}/phone": {
+        "/auth/telegram/phone": {
             "post": {
-                "description": "Отправляет номер телефона для авторизации",
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Отправляет номер телефона для авторизации в Telegram",
                 "consumes": [
                     "application/json"
                 ],
@@ -159,15 +205,8 @@ const docTemplate = `{
                 "tags": [
                     "auth"
                 ],
-                "summary": "Установить номер телефона",
+                "summary": "Установить номер телефона для Telegram",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Auth session ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "description": "Phone number",
                         "name": "request",
@@ -180,10 +219,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Successful response",
+                        "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/handlers.SessionResponse"
                         }
                     },
                     "400": {
@@ -192,8 +230,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
                     },
-                    "404": {
-                        "description": "Not Found",
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
@@ -201,34 +239,45 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/{id}/status": {
-            "get": {
-                "description": "Возвращает текущее состояние авторизации",
+        "/auth/token": {
+            "post": {
+                "description": "Создает JWT токен и сессию в БД",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "auth"
                 ],
-                "summary": "Получить статус авторизации",
+                "summary": "Получить токен авторизации",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Auth session ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
+                        "description": "Phone number",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PhoneRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/telegram.AuthState"
+                            "$ref": "#/definitions/handlers.TokenResponse"
                         }
                     },
-                    "404": {
-                        "description": "Not Found",
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
@@ -308,31 +357,36 @@ const docTemplate = `{
                 }
             }
         },
-        "telegram.AuthState": {
+        "handlers.SessionResponse": {
+            "description": "SessionResponse структура для ответа о сессии",
             "type": "object",
             "properties": {
-                "code": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "password": {
-                    "type": "string"
-                },
-                "phone_number": {
-                    "type": "string"
-                },
-                "state": {
-                    "type": "string"
-                },
-                "updated_at": {
+                "auth_state": {
                     "type": "string"
                 }
             }
+        },
+        "handlers.TokenResponse": {
+            "description": "TokenResponse структура для возврата токена",
+            "type": "object",
+            "properties": {
+                "expires_in": {
+                    "type": "integer"
+                },
+                "token": {
+                    "type": "string"
+                },
+                "token_type": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "Bearer": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
         }
     }
 }`

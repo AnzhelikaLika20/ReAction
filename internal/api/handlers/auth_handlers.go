@@ -3,81 +3,129 @@ package handlers
 import (
 	"ReAction/internal/config"
 	chat_updates "ReAction/internal/kafka/chat_updates"
-	"ReAction/internal/telegram"
-	"log"
+	"ReAction/internal/services"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
 
-// PhoneRequest представляет запрос на отправку номера телефона
 // @Description Запрос для отправки номера телефона при авторизации
 type PhoneRequest struct {
 	PhoneNumber string `json:"phone_number" example:"+1234567890" binding:"required"`
 }
 
-// CodeRequest представляет запрос на отправку кода подтверждения
 // @Description Запрос для отправки кода подтверждения из Telegram
 type CodeRequest struct {
 	Code string `json:"code" example:"12345" binding:"required"`
 }
 
-// PasswordRequest представляет запрос на отправку пароля
 // @Description Запрос для отправки пароля двухфакторной аутентификации
 type PasswordRequest struct {
 	Password string `json:"password" example:"my2fapassword" binding:"required"`
 }
 
-// ErrorResponse структура для ошибок
 // @Description Структура для возврата ошибок
 type ErrorResponse struct {
 	Error string `json:"error" example:"error message"`
 }
 
-// StartAuth инициирует процесс авторизации
-// @Summary Начать авторизацию
-// @Description Создает новую сессию авторизации
+// @Description TokenResponse структура для возврата токена
+type TokenResponse struct {
+	Token     string `json:"token"`
+	TokenType string `json:"token_type"`
+	ExpiresIn int    `json:"expires_in"`
+}
+
+// @Description SessionResponse структура для ответа о сессии
+type SessionResponse struct {
+	AuthState string `json:"auth_state"`
+}
+
+type AuthHandlers struct {
+	authService   *services.AuthService
+	cfg           config.TelegramConfig
+	kafkaProducer *chat_updates.ChatUpdatesProducer
+}
+
+func NewAuthHandlers(
+	authService *services.AuthService,
+	cfg config.TelegramConfig,
+	kafkaProducer *chat_updates.ChatUpdatesProducer,
+) *AuthHandlers {
+	return &AuthHandlers{
+		authService:   authService,
+		cfg:           cfg,
+		kafkaProducer: kafkaProducer,
+	}
+}
+
+// @Summary Получить токен авторизации
+// @Description Создает JWT токен и сессию в БД
 // @Tags auth
 // @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{} "Successful response"
-// @Router /auth/start [post]
-// auth_handlers.go
-func StartAuth(c *gin.Context, authManager *telegram.AuthStateManager, cfg config.TelegramConfig, kafkaProducer *chat_updates.ChatUpdatesProducer) {
-	authState := authManager.CreateAuthState()
+// @Param request body PhoneRequest true "Phone number"
+// @Success 200 {object} TokenResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /auth/token [post]
+func (h *AuthHandlers) GetToken(c *gin.Context) {
+	var req PhoneRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
 
-	go func(sessionID string) {
-		_, _, err := telegram.NewClientWithHTTPAuth(sessionID, cfg, authManager, kafkaProducer)
-		if err != nil {
-			log.Printf("[TELEGRAM] ERROR: Failed to create Telegram client for session %s: %v", sessionID, err)
-			return
+	token, err := h.authService.GenerateToken(c.Request.Context(), req.PhoneNumber)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if err.Error() == "user is inactive" {
+			status = http.StatusForbidden
 		}
+		c.JSON(status, ErrorResponse{Error: err.Error()})
+		return
+	}
 
-		log.Printf("[TELEGRAM] Telegram client created successfully for session %s", sessionID)
-	}(authState.ID)
-
-	c.JSON(http.StatusOK, map[string]interface{}{
-		"session_id": authState.ID,
-		"state":      authState.State,
-		"message":    "Please provide phone number. Telegram client is being created...",
-		"created_at": authState.CreatedAt,
+	c.JSON(http.StatusOK, TokenResponse{
+		Token:     token,
+		TokenType: "Bearer",
+		ExpiresIn: int(h.authService.GetTokenDuration().Seconds()),
 	})
 }
 
-// SetPhoneNumber устанавливает номер телефона
-// @Summary Установить номер телефона
-// @Description Отправляет номер телефона для авторизации
+// @Summary Инициализировать Telegram клиента
+// @Description Создает Telegram клиент и обновляет статус сессии
 // @Tags auth
 // @Accept json
 // @Produce json
-// @Param id path string true "Auth session ID"
+// @Security Bearer
+// @Success 200 {object} SessionResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /auth/telegram/init [post]
+func (h *AuthHandlers) InitTelegramClient(c *gin.Context) {
+	session_id := c.GetString("session_id")
+
+	h.authService.CreateTdlibClient(c.Request.Context(), session_id, h.cfg, h.kafkaProducer)
+
+	c.JSON(http.StatusOK, SessionResponse{
+		AuthState: "auth_initiated",
+	})
+}
+
+// @Summary Установить номер телефона для Telegram
+// @Description Отправляет номер телефона для авторизации в Telegram
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Security Bearer
 // @Param request body PhoneRequest true "Phone number"
-// @Success 200 {object} map[string]interface{} "Successful response"
+// @Success 200 {object} SessionResponse
 // @Failure 400 {object} ErrorResponse
-// @Failure 404 {object} ErrorResponse
-// @Router /auth/{id}/phone [post]
-func SetPhoneNumber(c *gin.Context, authManager *telegram.AuthStateManager) {
-	sessionID := c.Param("id")
+// @Failure 401 {object} ErrorResponse
+// @Router /auth/telegram/phone [post]
+func (h *AuthHandlers) SetPhoneNumber(c *gin.Context) {
+	sessionId := c.GetString("session_id")
 
 	var req PhoneRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -85,35 +133,31 @@ func SetPhoneNumber(c *gin.Context, authManager *telegram.AuthStateManager) {
 		return
 	}
 
-	if err := authManager.SetPhoneNumber(sessionID, req.PhoneNumber); err != nil {
+	state, err := h.authService.SetPhoneNumber(c.Request.Context(), sessionId, req.PhoneNumber)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	state, _ := authManager.GetAuthState(sessionID)
-	c.JSON(http.StatusOK, map[string]interface{}{
-		"session_id":   state.ID,
-		"state":        state.State,
-		"message":      "Code sent to phone. Please provide verification code",
-		"phone_number": req.PhoneNumber,
-		"updated_at":   state.UpdatedAt,
+	c.JSON(http.StatusOK, SessionResponse{
+		AuthState: state,
 	})
 }
 
-// SetCode устанавливает код подтверждения
 // @Summary Установить код подтверждения
 // @Description Отправляет код подтверждения из Telegram
 // @Tags auth
 // @Accept json
 // @Produce json
-// @Param id path string true "Auth session ID"
+// @Security Bearer
 // @Param request body CodeRequest true "Verification code"
-// @Success 200 {object} map[string]interface{} "Successful response"
+// @Success 200 {object} SessionResponse
 // @Failure 400 {object} ErrorResponse
-// @Failure 404 {object} ErrorResponse
-// @Router /auth/{id}/code [post]
-func SetCode(c *gin.Context, authManager *telegram.AuthStateManager) {
-	sessionID := c.Param("id")
+// @Failure 401 {object} ErrorResponse
+// @Router /auth/telegram/code [post]
+func (h *AuthHandlers) SetCode(c *gin.Context) {
+	sessionId := c.GetString("session_id")
+	phoneNumber := c.GetString("phone_number")
 
 	var req CodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -121,34 +165,31 @@ func SetCode(c *gin.Context, authManager *telegram.AuthStateManager) {
 		return
 	}
 
-	if err := authManager.SetCode(sessionID, req.Code); err != nil {
+	state, err := h.authService.SetCode(c.Request.Context(), sessionId, req.Code, phoneNumber)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	state, _ := authManager.GetAuthState(sessionID)
-	c.JSON(http.StatusOK, map[string]interface{}{
-		"session_id": state.ID,
-		"state":      state.State,
-		"message":    "Code accepted. Check if password is required",
-		"updated_at": state.UpdatedAt,
+	c.JSON(http.StatusOK, SessionResponse{
+		AuthState: state,
 	})
 }
 
-// SetPassword устанавливает пароль
 // @Summary Установить пароль
 // @Description Отправляет пароль двухфакторной аутентификации
 // @Tags auth
 // @Accept json
 // @Produce json
-// @Param id path string true "Auth session ID"
+// @Security Bearer
 // @Param request body PasswordRequest true "Password"
-// @Success 200 {object} map[string]interface{} "Successful response"
+// @Success 200 {object} SessionResponse
 // @Failure 400 {object} ErrorResponse
-// @Failure 404 {object} ErrorResponse
-// @Router /auth/{id}/password [post]
-func SetPassword(c *gin.Context, authManager *telegram.AuthStateManager) {
-	sessionID := c.Param("id")
+// @Failure 401 {object} ErrorResponse
+// @Router /auth/telegram/password [post]
+func (h *AuthHandlers) SetPassword(c *gin.Context) {
+	sessionId := c.GetString("session_id")
+	phoneNumber := c.GetString("phone_number")
 
 	var req PasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -156,62 +197,48 @@ func SetPassword(c *gin.Context, authManager *telegram.AuthStateManager) {
 		return
 	}
 
-	if err := authManager.SetPassword(sessionID, req.Password); err != nil {
+	state, err := h.authService.SetPassword(c.Request.Context(), sessionId, req.Password, phoneNumber)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	state, _ := authManager.GetAuthState(sessionID)
-	c.JSON(http.StatusOK, map[string]interface{}{
-		"session_id": state.ID,
-		"state":      state.State,
-		"message":    "Password accepted. Authentication in progress",
-		"updated_at": state.UpdatedAt,
+	c.JSON(http.StatusOK, SessionResponse{
+		AuthState: state,
 	})
 }
 
-// GetAuthStatus возвращает статус авторизации
-// @Summary Получить статус авторизации
-// @Description Возвращает текущее состояние авторизации
+// @Summary Получить статус сессии
+// @Description Возвращает текущий статус сессии
 // @Tags auth
 // @Produce json
-// @Param id path string true "Auth session ID"
-// @Success 200 {object} telegram.AuthState
-// @Failure 404 {object} ErrorResponse
-// @Router /auth/{id}/status [get]
-func GetAuthStatus(c *gin.Context, authManager *telegram.AuthStateManager) {
-	sessionID := c.Param("id")
+// @Security Bearer
+// @Success 200 {object} SessionResponse
+// @Failure 401 {object} ErrorResponse
+// @Router /auth/session/status [get]
+func (h *AuthHandlers) GetSessionStatus(c *gin.Context) {
+	sessionId := c.GetString("session_id")
 
-	state, exists := authManager.GetAuthState(sessionID)
-	if !exists {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Auth session not found"})
+	state, err := h.authService.GetAuthState(c.Request.Context(), sessionId)
+	if err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Session not found"})
 		return
 	}
 
-	c.JSON(http.StatusOK, state)
+	c.JSON(http.StatusOK, SessionResponse{
+		AuthState: state,
+	})
 }
 
-// RegisterAuthRoutes регистрирует маршруты авторизации
-// @Summary Регистрация маршрутов авторизации
-// @Description Регистрирует все конечные точки API для авторизации
-func RegisterAuthRoutes(router *gin.Engine, authManager *telegram.AuthStateManager, cfg config.TelegramConfig, kafkaProducer *chat_updates.ChatUpdatesProducer) {
-	router.POST("/auth/start", func(c *gin.Context) {
-		StartAuth(c, authManager, cfg, kafkaProducer)
-	})
+func (h *AuthHandlers) RegisterAuthRoutes(router *gin.Engine) {
+	router.POST("/auth/token", h.GetToken)
 
-	router.POST("/auth/:id/phone", func(c *gin.Context) {
-		SetPhoneNumber(c, authManager)
-	})
+	protected := router.Group("/auth/telegram")
 
-	router.POST("/auth/:id/code", func(c *gin.Context) {
-		SetCode(c, authManager)
-	})
+	protected.POST("/init", h.InitTelegramClient)
+	protected.POST("/phone", h.SetPhoneNumber)
+	protected.POST("/code", h.SetCode)
+	protected.POST("/password", h.SetPassword)
 
-	router.POST("/auth/:id/password", func(c *gin.Context) {
-		SetPassword(c, authManager)
-	})
-
-	router.GET("/auth/:id/status", func(c *gin.Context) {
-		GetAuthStatus(c, authManager)
-	})
+	router.GET("/auth/session/status", h.GetSessionStatus)
 }

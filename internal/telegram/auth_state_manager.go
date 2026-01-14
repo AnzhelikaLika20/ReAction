@@ -6,233 +6,167 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zelenin/go-tdlib/client"
+	"github.com/Arman92/go-tdlib"
 )
 
-type AuthState struct {
-	ID          string    `json:"id"`
-	State       string    `json:"state"`
-	PhoneNumber string    `json:"phone_number,omitempty"`
-	Code        string    `json:"code,omitempty"`
-	Password    string    `json:"password,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-}
-
 type AuthStateManager struct {
-	mu              sync.RWMutex
-	states          map[string]*AuthState
-	authorizers     map[string]*SimpleAuthorizer
-	cleanupInterval time.Duration
-	stateTimeout    time.Duration
+	mu      sync.RWMutex
+	clients map[string]*Client
 }
 
 func NewAuthStateManager(cleanupInterval, stateTimeout time.Duration) *AuthStateManager {
 	mgr := &AuthStateManager{
-		states:          make(map[string]*AuthState),
-		authorizers:     make(map[string]*SimpleAuthorizer),
-		cleanupInterval: cleanupInterval,
-		stateTimeout:    stateTimeout,
+		clients: make(map[string]*Client),
 	}
-
-	go mgr.cleanupExpiredStates()
 
 	return mgr
 }
 
-func (m *AuthStateManager) CreateAuthState() *AuthState {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	id := generateID()
-	state := &AuthState{
-		ID:        id,
-		State:     "waiting_for_phone",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-
-	m.states[id] = state
-	return state
-}
-
-func (m *AuthStateManager) GetAuthState(id string) (*AuthState, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	state, exists := m.states[id]
-	return state, exists
-}
-
-func (m *AuthStateManager) RegisterAuthorizer(sessionID string, authorizer *SimpleAuthorizer) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.authorizers[sessionID] = authorizer
-
-	go m.monitorAuthState(sessionID, authorizer)
-}
-
-func (m *AuthStateManager) monitorAuthState(sessionID string, authorizer *SimpleAuthorizer) {
-	for state := range authorizer.State {
-		if err := m.UpdateState(sessionID, state); err != nil {
-			log.Printf("[TELEGRAM] Failed to update auth state: %v", err)
-		}
-	}
-}
-
-func (m *AuthStateManager) SetPhoneNumber(id, phoneNumber string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	state, exists := m.states[id]
-	if !exists {
-		return fmt.Errorf("auth state not found")
-	}
-
-	if state.State != "waiting_for_phone" {
-		return fmt.Errorf("wrong auth state: %s, expected waiting_for_phone", state.State)
-	}
-
-	state.PhoneNumber = phoneNumber
-	state.State = "waiting_for_code"
-	state.UpdatedAt = time.Now()
-
-	authorizer, exists := m.authorizers[id]
-	if !exists {
-		return fmt.Errorf("authorizer not found")
-	}
-
-	select {
-	case authorizer.PhoneNumber <- phoneNumber:
-		return nil
-	case <-time.After(10 * time.Second):
-		state.State = "waiting_for_phone"
-		return fmt.Errorf("timeout sending phone number")
-	}
-}
-
-func (m *AuthStateManager) SetCode(id, code string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	state, exists := m.states[id]
-	if !exists {
-		return fmt.Errorf("auth state not found")
-	}
-
-	if state.State != "waiting_for_code" {
-		return fmt.Errorf("wrong auth state: %s, expected waiting_for_code", state.State)
-	}
-
-	state.Code = code
-	state.State = "processing"
-	state.UpdatedAt = time.Now()
-
-	authorizer, exists := m.authorizers[id]
-	if !exists {
-		return fmt.Errorf("authorizer not found")
-	}
-
-	select {
-	case authorizer.Code <- code:
-		return nil
-	case <-time.After(10 * time.Second):
-		state.State = "waiting_for_code"
-		return fmt.Errorf("timeout sending code")
-	}
-}
-
-func (m *AuthStateManager) SetPassword(id, password string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	state, exists := m.states[id]
-	if !exists {
-		return fmt.Errorf("auth state not found")
-	}
-
-	if state.State != "waiting_for_password" {
-		return fmt.Errorf("wrong auth state: %s, expected waiting_for_password", state.State)
-	}
-
-	state.Password = password
-	state.State = "processing"
-	state.UpdatedAt = time.Now()
-
-	authorizer, exists := m.authorizers[id]
-	if !exists {
-		return fmt.Errorf("authorizer not found")
-	}
-
-	select {
-	case authorizer.Password <- password:
-		return nil
-	case <-time.After(10 * time.Second):
-		state.State = "waiting_for_password"
-		return fmt.Errorf("timeout sending password")
-	}
-}
-
-func (m *AuthStateManager) UpdateState(id string, authState client.AuthorizationState) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	state, exists := m.states[id]
-	if !exists {
-		return fmt.Errorf("auth state not found")
-	}
-
-	switch authState.(type) {
-	case *client.AuthorizationStateWaitTdlibParameters:
-		state.State = "wait_tdlib_parameters"
-
-	case *client.AuthorizationStateWaitPhoneNumber:
-		state.State = "waiting_for_phone"
-
-	case *client.AuthorizationStateWaitCode:
-		state.State = "waiting_for_code"
-
-	case *client.AuthorizationStateWaitPassword:
-		state.State = "waiting_for_password"
-
-	case *client.AuthorizationStateReady:
-		state.State = "ready"
-
-	case *client.AuthorizationStateClosed:
-		state.State = "closed"
-
-	default:
-		log.Printf("[TELEGRAM] Auth state %s: received unknown state type: %T", id, authState)
-	}
-
-	state.UpdatedAt = time.Now()
-	return nil
-}
-
-func (m *AuthStateManager) cleanupExpiredStates() {
-	ticker := time.NewTicker(m.cleanupInterval)
+func (m *AuthStateManager) monitorAuthState(sessionID string, client *Client) {
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		m.mu.Lock()
-		now := time.Now()
-		for id, state := range m.states {
-			if now.Sub(state.UpdatedAt) > m.stateTimeout {
-				if authorizer, exists := m.authorizers[id]; exists {
-					close(authorizer.PhoneNumber)
-					close(authorizer.Code)
-					close(authorizer.Password)
-					close(authorizer.State)
-					delete(m.authorizers, id)
-				}
-				delete(m.states, id)
-				log.Printf("[TELEGRAM] Cleaned up expired auth state: %s", id)
+	for {
+		select {
+		case <-ticker.C:
+			currentState, err := client.tdlibClient.Authorize()
+			if err != nil {
+				log.Printf("session_id=%s, error getting state: %v", sessionID, err)
+				continue
+			}
+
+			stateStr := string(currentState.GetAuthorizationStateEnum())
+			log.Printf("session_id=%s, state=%s", sessionID, stateStr)
+
+			client.mu.Lock()
+			client.authState = stateStr
+			client.UpdatedAt = time.Now()
+			client.mu.Unlock()
+
+			if stateStr == string(tdlib.AuthorizationStateReadyType) {
+				log.Printf("session_id=%s, authorization completed", sessionID)
+				return
 			}
 		}
-		m.mu.Unlock()
 	}
+	// authStateChan := client.tdlibClient.AddEventReceiver(
+	// 	&tdlib.UpdateAuthorizationState{},
+	// 	func(msg *tdlib.TdMessage) bool {
+	// 		return true
+	// 	},
+	// 	5,
+	// )
+
+	// go func() {
+	// 	for authUpdate := range authStateChan.Chan {
+	// 		if update, ok := authUpdate.(*tdlib.UpdateAuthorizationState); ok {
+	// 			log.Println(update.AuthorizationState)
+	// 		}
+	// 	}
+	// }()
+
+	// for {
+	// 	currentState, _ := client.tdlibClient.Authorize()
+	// 	log.Println("session_id=%s, state=%s", sessionID, string(currentState.GetAuthorizationStateEnum()))
+	// 	client.authState = string(currentState.GetAuthorizationStateEnum())
+	// }
 }
 
-func generateID() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+func (m *AuthStateManager) RegisterAuthorizer(sessionID string, client *Client) {
+	m.clients[sessionID] = client
+
+	go m.monitorAuthState(sessionID, client)
+}
+
+func (m *AuthStateManager) GetAuthState(id string) (string, error) {
+	client, exists := m.clients[id]
+	if !exists {
+		return "", fmt.Errorf("client not found")
+	}
+
+	return client.authState, nil
+}
+
+func (m *AuthStateManager) SetPhoneNumber(id, phoneNumber string) (tdlib.AuthorizationState, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	client, exists := m.clients[id]
+	if !exists {
+		return nil, fmt.Errorf("client not found")
+	}
+
+	state, err := m.GetAuthState(id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get state")
+	}
+
+	if state != string(tdlib.AuthorizationStateWaitPhoneNumberType) {
+		return nil, fmt.Errorf("unexpected state %s", state)
+	}
+
+	newState, err := client.tdlibClient.SendPhoneNumber(phoneNumber)
+	if err != nil {
+		return nil, fmt.Errorf("Error sending phone number: %v", err)
+	}
+
+	client.UpdatedAt = time.Now()
+
+	return newState, nil
+}
+
+func (m *AuthStateManager) SetCode(id, code string) (tdlib.AuthorizationState, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	client, exists := m.clients[id]
+	if !exists {
+		return nil, fmt.Errorf("client not found")
+	}
+
+	state, err := m.GetAuthState(id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get state")
+	}
+
+	if state != string(tdlib.AuthorizationStateWaitCodeType) {
+		return nil, fmt.Errorf("unexpected state %s", state)
+	}
+
+	newState, err := client.tdlibClient.SendAuthCode(code)
+	if err != nil {
+		return nil, fmt.Errorf("Error sending auth code: %v", err)
+	}
+
+	client.UpdatedAt = time.Now()
+
+	return newState, nil
+}
+
+func (m *AuthStateManager) SetPassword(id, password string) (tdlib.AuthorizationState, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	client, exists := m.clients[id]
+	if !exists {
+		return nil, fmt.Errorf("client not found")
+	}
+
+	state, err := m.GetAuthState(id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get state")
+	}
+
+	if state != string(tdlib.AuthorizationStateWaitPasswordType) {
+		return nil, fmt.Errorf("unexpected state %s", state)
+	}
+
+	newState, err := client.tdlibClient.SendAuthCode(password)
+	if err != nil {
+		return nil, fmt.Errorf("Error sending password: %v", err)
+	}
+
+	client.UpdatedAt = time.Now()
+
+	return newState, nil
 }

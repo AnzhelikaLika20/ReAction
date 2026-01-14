@@ -33,37 +33,50 @@ definitions:
     required:
     - phone_number
     type: object
-  telegram.AuthState:
+  handlers.SessionResponse:
+    description: SessionResponse структура для ответа о сессии
     properties:
-      code:
+      auth_state:
         type: string
-      created_at:
+    type: object
+  handlers.TokenResponse:
+    description: TokenResponse структура для возврата токена
+    properties:
+      expires_in:
+        type: integer
+      token:
         type: string
-      id:
-        type: string
-      password:
-        type: string
-      phone_number:
-        type: string
-      state:
-        type: string
-      updated_at:
+      token_type:
         type: string
     type: object
 info:
   contact: {}
 paths:
-  /auth/{id}/code:
+  /auth/session/status:
+    get:
+      description: Возвращает текущий статус сессии
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.SessionResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Получить статус сессии
+      tags:
+      - auth
+  /auth/telegram/code:
     post:
       consumes:
       - application/json
       description: Отправляет код подтверждения из Telegram
       parameters:
-      - description: Auth session ID
-        in: path
-        name: id
-        required: true
-        type: string
       - description: Verification code
         in: body
         name: request
@@ -74,32 +87,53 @@ paths:
       - application/json
       responses:
         "200":
-          description: Successful response
+          description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/handlers.SessionResponse'
         "400":
           description: Bad Request
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
-        "404":
-          description: Not Found
+        "401":
+          description: Unauthorized
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
       summary: Установить код подтверждения
       tags:
       - auth
-  /auth/{id}/password:
+  /auth/telegram/init:
+    post:
+      consumes:
+      - application/json
+      description: Создает Telegram клиент и обновляет статус сессии
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.SessionResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Инициализировать Telegram клиента
+      tags:
+      - auth
+  /auth/telegram/password:
     post:
       consumes:
       - application/json
       description: Отправляет пароль двухфакторной аутентификации
       parameters:
-      - description: Auth session ID
-        in: path
-        name: id
-        required: true
-        type: string
       - description: Password
         in: body
         name: request
@@ -110,32 +144,28 @@ paths:
       - application/json
       responses:
         "200":
-          description: Successful response
+          description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/handlers.SessionResponse'
         "400":
           description: Bad Request
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
-        "404":
-          description: Not Found
+        "401":
+          description: Unauthorized
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
       summary: Установить пароль
       tags:
       - auth
-  /auth/{id}/phone:
+  /auth/telegram/phone:
     post:
       consumes:
       - application/json
-      description: Отправляет номер телефона для авторизации
+      description: Отправляет номер телефона для авторизации в Telegram
       parameters:
-      - description: Auth session ID
-        in: path
-        name: id
-        required: true
-        type: string
       - description: Phone number
         in: body
         name: request
@@ -146,58 +176,50 @@ paths:
       - application/json
       responses:
         "200":
-          description: Successful response
+          description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/handlers.SessionResponse'
         "400":
           description: Bad Request
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
-        "404":
-          description: Not Found
+        "401":
+          description: Unauthorized
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
-      summary: Установить номер телефона
+      security:
+      - Bearer: []
+      summary: Установить номер телефона для Telegram
       tags:
       - auth
-  /auth/{id}/status:
-    get:
-      description: Возвращает текущее состояние авторизации
+  /auth/token:
+    post:
+      consumes:
+      - application/json
+      description: Создает JWT токен и сессию в БД
       parameters:
-      - description: Auth session ID
-        in: path
-        name: id
+      - description: Phone number
+        in: body
+        name: request
         required: true
-        type: string
+        schema:
+          $ref: '#/definitions/handlers.PhoneRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/telegram.AuthState'
-        "404":
-          description: Not Found
+            $ref: '#/definitions/handlers.TokenResponse'
+        "400":
+          description: Bad Request
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
-      summary: Получить статус авторизации
-      tags:
-      - auth
-  /auth/start:
-    post:
-      consumes:
-      - application/json
-      description: Создает новую сессию авторизации
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Successful response
+        "500":
+          description: Internal Server Error
           schema:
-            additionalProperties: true
-            type: object
-      summary: Начать авторизацию
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Получить токен авторизации
       tags:
       - auth
   /ping:
@@ -214,4 +236,9 @@ paths:
       summary: Проверка работоспособности API
       tags:
       - health
+securityDefinitions:
+  Bearer:
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"

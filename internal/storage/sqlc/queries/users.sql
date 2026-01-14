@@ -1,17 +1,19 @@
 -- name: CreateUser :one
-INSERT INTO users (phone_number, is_active) 
-VALUES ($1, $2) 
+INSERT INTO users (
+    phone_number
+) VALUES ($1)
 RETURNING *;
 
 -- name: GetUserByPhone :one
 SELECT * FROM users 
 WHERE phone_number = $1;
 
--- name: UpdateUserStatus :exec
+-- name: UpdateUserLastAuth :exec
 UPDATE users 
-SET is_active = $1, updated_at = NOW() 
-WHERE phone_number = $2;
+SET 
+    updated_at = NOW()
+WHERE phone_number = $1;
 
--- name: GetAllUsers :many
-SELECT * FROM users 
-ORDER BY created_at DESC;
+-- name: DeleteUser :exec
+DELETE FROM users 
+WHERE phone_number = $1;

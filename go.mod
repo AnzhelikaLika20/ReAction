@@ -3,11 +3,11 @@ module ReAction
 go 1.24.5
 
 require (
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/joho/godotenv v1.5.1
 	github.com/swaggo/files v1.0.1
 	github.com/swaggo/gin-swagger v1.6.1
 	github.com/swaggo/swag v1.16.6
-	github.com/zelenin/go-tdlib v0.7.6
 )
 
 require (
@@ -66,7 +66,9 @@ require (
 )
 
 require (
+	github.com/Arman92/go-tdlib v1.0.0
 	github.com/gin-gonic/gin v1.11.0
+	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/pressly/goose/v3 v3.26.0
 	github.com/segmentio/kafka-go v0.4.49

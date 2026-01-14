@@ -1,9 +1,10 @@
 package config
 
 import (
-	"fmt"
+	"log"
 	"os"
 	"strconv"
+	"time"
 )
 
 type AppConfig struct {
@@ -12,6 +13,7 @@ type AppConfig struct {
 	Server   ServerConfig
 	Kafka    KafkaConfig
 	Database Database
+	JWT      JWTConfig
 }
 
 type ServerConfig struct {
@@ -41,6 +43,11 @@ type Database struct {
 	User     string
 	Password string
 	DBName   string
+}
+
+type JWTConfig struct {
+	SecretKey     string        `env:"JWT_SECRET_KEY,required"`
+	TokenDuration time.Duration `env:"JWT_TOKEN_DURATION" envDefault:"24h"`
 }
 
 func Load() (*AppConfig, error) {
@@ -75,17 +82,27 @@ func Load() (*AppConfig, error) {
 		DBName:   GetEnv("DB_NAME", "reaction"),
 	}
 
+	jwtDuration, err := time.ParseDuration(GetEnv("JWT_TOKEN_DURATION", "24h"))
+	if err != nil {
+		jwtDuration = 24 * time.Hour
+	}
+
+	cfg.JWT = JWTConfig{
+		SecretKey:     GetEnv("JWT_SECRET_KEY", "very-very-secret-key"),
+		TokenDuration: jwtDuration,
+	}
+
 	return cfg, nil
 }
 
 func MustLoad() *AppConfig {
 	cfg, err := Load()
 	if err != nil {
-		fmt.Printf("Failed to load configuration: %v\n", err)
-		fmt.Println("\nPlease set the following environment variables:")
-		fmt.Println("  TELEGRAM_API_ID     - Your Telegram API ID")
-		fmt.Println("  TELEGRAM_API_HASH   - Your Telegram API Hash")
-		fmt.Println("\nYou can create a .env file with these variables")
+		log.Println("Failed to load configuration: %v\n", err)
+		log.Println("\nPlease set the following environment variables:")
+		log.Println("  TELEGRAM_API_ID     - Your Telegram API ID")
+		log.Println("  TELEGRAM_API_HASH   - Your Telegram API Hash")
+		log.Println("\nYou can create a .env file with these variables")
 		panic(err)
 	}
 	return cfg

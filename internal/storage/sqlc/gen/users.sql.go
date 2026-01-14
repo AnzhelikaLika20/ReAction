@@ -7,23 +7,17 @@ package db
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (phone_number, is_active) 
-VALUES ($1, $2) 
+INSERT INTO users (
+    phone_number
+) VALUES ($1)
 RETURNING phone_number, is_active, created_at, updated_at
 `
 
-type CreateUserParams struct {
-	PhoneNumber string
-	IsActive    pgtype.Bool
-}
-
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.PhoneNumber, arg.IsActive)
+func (q *Queries) CreateUser(ctx context.Context, phoneNumber string) (User, error) {
+	row := q.db.QueryRow(ctx, createUser, phoneNumber)
 	var i User
 	err := row.Scan(
 		&i.PhoneNumber,
@@ -34,34 +28,14 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
-const getAllUsers = `-- name: GetAllUsers :many
-SELECT phone_number, is_active, created_at, updated_at FROM users 
-ORDER BY created_at DESC
+const deleteUser = `-- name: DeleteUser :exec
+DELETE FROM users 
+WHERE phone_number = $1
 `
 
-func (q *Queries) GetAllUsers(ctx context.Context) ([]User, error) {
-	rows, err := q.db.Query(ctx, getAllUsers)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []User
-	for rows.Next() {
-		var i User
-		if err := rows.Scan(
-			&i.PhoneNumber,
-			&i.IsActive,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+func (q *Queries) DeleteUser(ctx context.Context, phoneNumber string) error {
+	_, err := q.db.Exec(ctx, deleteUser, phoneNumber)
+	return err
 }
 
 const getUserByPhone = `-- name: GetUserByPhone :one
@@ -81,18 +55,14 @@ func (q *Queries) GetUserByPhone(ctx context.Context, phoneNumber string) (User,
 	return i, err
 }
 
-const updateUserStatus = `-- name: UpdateUserStatus :exec
+const updateUserLastAuth = `-- name: UpdateUserLastAuth :exec
 UPDATE users 
-SET is_active = $1, updated_at = NOW() 
-WHERE phone_number = $2
+SET 
+    updated_at = NOW()
+WHERE phone_number = $1
 `
 
-type UpdateUserStatusParams struct {
-	IsActive    pgtype.Bool
-	PhoneNumber string
-}
-
-func (q *Queries) UpdateUserStatus(ctx context.Context, arg UpdateUserStatusParams) error {
-	_, err := q.db.Exec(ctx, updateUserStatus, arg.IsActive, arg.PhoneNumber)
+func (q *Queries) UpdateUserLastAuth(ctx context.Context, phoneNumber string) error {
+	_, err := q.db.Exec(ctx, updateUserLastAuth, phoneNumber)
 	return err
 }
