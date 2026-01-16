@@ -50,10 +50,7 @@ func main() {
 		cfg.JWT.TokenDuration,
 	)
 
-	authManager := telegram.NewAuthStateManager(
-		5*time.Minute,
-		30*time.Minute,
-	)
+	authManager := telegram.NewAuthStateManager()
 
 	authService := services.NewAuthService(
 		jwtService,

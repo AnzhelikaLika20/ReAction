@@ -241,7 +241,7 @@ const docTemplate = `{
         },
         "/auth/token": {
             "post": {
-                "description": "Создает JWT токен и сессию в БД",
+                "description": "Создает JWT токен",
                 "consumes": [
                     "application/json"
                 ],

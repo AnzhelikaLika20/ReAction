@@ -196,7 +196,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: Создает JWT токен и сессию в БД
+      description: Создает JWT токен
       parameters:
       - description: Phone number
         in: body

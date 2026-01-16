@@ -3,7 +3,6 @@ package telegram
 import (
 	chat_updates "ReAction/internal/kafka/chat_updates"
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/Arman92/go-tdlib"
@@ -58,24 +57,38 @@ func (l *Listener) Start(ctx context.Context) {
 	l.cancel = cancel
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[TG LISTENER] PANIC RECOVERED: %v", r)
+			}
+		}()
+
 		eventFilter := func(msg *tdlib.TdMessage) bool {
 			updateMsg := (*msg).(*tdlib.UpdateNewMessage)
 
 			// TODO: add filtration rules
 			_ = updateMsg
 
-			return false
+			return true
 		}
+
 		receiver := l.client.AddEventReceiver(&tdlib.UpdateNewMessage{}, eventFilter, 15)
 		for newMsg := range receiver.Chan {
-			log.Println(newMsg)
-			updateMsg := (newMsg).(*tdlib.UpdateNewMessage)
+			updateMsg, ok := newMsg.(*tdlib.UpdateNewMessage)
+			if !ok {
+				log.Printf("[TG LISTENER] Received unexpected message type: %T", newMsg)
+				continue
+			}
+
+			if updateMsg == nil || updateMsg.Message == nil {
+				log.Printf("[TG LISTENER] Received nil message")
+				continue
+			}
+
+			log.Printf("[TG LISTENER] New message: chat_id=%d, message_id=%d",
+				updateMsg.Message.ChatID, updateMsg.Message.ID)
 
 			l.handleNewMessage(updateMsg)
-
-			msgText := updateMsg.Message.Content.(*tdlib.MessageText)
-			log.Println("MsgText:  ", msgText.Text)
-			fmt.Print("\n\n")
 		}
 
 	}()

@@ -76,9 +76,6 @@ func (s *AuthService) SetCode(ctx context.Context, sessionID, code string, phone
 		return "", err
 	}
 
-	s.sessionRepo.CreateSession(ctx, sessionID, phoneNumber)
-	s.userRepo.CreateUser(ctx, phoneNumber)
-
 	return string(state.GetAuthorizationStateEnum()), nil
 }
 
@@ -89,19 +86,53 @@ func (s *AuthService) SetPassword(ctx context.Context, sessionID, password strin
 		return "", err
 	}
 
-	s.sessionRepo.CreateSession(ctx, sessionID, phoneNumber)
-	s.userRepo.CreateUser(ctx, phoneNumber)
-
 	return string(state.GetAuthorizationStateEnum()), nil
 }
 
-func (s *AuthService) CreateTdlibClient(ctx context.Context, sessionID string, cfg config.TelegramConfig, producer *chat_updates.ChatUpdatesProducer) {
+func (s *AuthService) CreateTdlibClient(ctx context.Context, sessionID string, phoneNumber string, cfg config.TelegramConfig, producer *chat_updates.ChatUpdatesProducer) {
 	go func() {
-		_, err := telegram.NewClientWithHTTPAuth(sessionID, cfg, s.authManager, producer)
+		client, err := telegram.NewClientWithHTTPAuth(sessionID, phoneNumber, cfg, s.authManager, producer)
 		if err != nil {
 			log.Printf("[TELEGRAM] ERROR: Failed to create Telegram client for session %s: %v", sessionID, err)
 			return
 		}
+
+		go func() {
+			log.Printf("[AUTH] Waiting for auth ready... session: %s", sessionID)
+
+			<-client.GetAuthReadyChannel()
+			log.Printf("[AUTH] Auth ready received for session %s", sessionID)
+
+			ctx := context.Background()
+			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+
+			existingUser, err := s.userRepo.GetUserByPhone(ctx, phoneNumber)
+			if err != nil {
+				log.Printf("[AUTH] ERROR checking user existence: %v", err)
+			}
+			if existingUser == nil {
+				log.Printf("[AUTH] Creating user in database for: %s", phoneNumber)
+				if _, err := s.userRepo.CreateUser(ctx, phoneNumber); err != nil {
+					log.Printf("[AUTH] ERROR creating user: %v", err)
+				}
+			}
+			existingSession, err := s.sessionRepo.GetSession(ctx, sessionID)
+			if err != nil {
+				log.Printf("[AUTH] ERROR checking session existence: %v", err)
+			}
+
+			if existingSession == nil {
+				log.Printf("[AUTH] Creating session in database: %s", sessionID)
+				if err := s.sessionRepo.CreateSession(ctx, sessionID, phoneNumber); err != nil {
+					log.Printf("[AUTH] ERROR creating session: %v", err)
+				}
+			}
+
+			listenerCtx := context.Background()
+			client.GetListener().Start(listenerCtx)
+			log.Printf("[AUTH] Listener started for session %s", sessionID)
+		}()
 
 		log.Printf("[TELEGRAM] Telegram client created successfully for session %s", sessionID)
 	}()

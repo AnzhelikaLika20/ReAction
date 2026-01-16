@@ -3,7 +3,9 @@ package storage
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"time"
 
 	"ReAction/internal/storage/sqlc/gen"
@@ -26,11 +28,9 @@ type Session struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-func (r *SessionRepository) CreateSession(ctx context.Context, token, phoneNumber string) error {
-	tokenHash := hashToken(token)
-
+func (r *SessionRepository) CreateSession(ctx context.Context, sessionID, phoneNumber string) error {
 	_, err := r.queries.CreateSession(ctx, db.CreateSessionParams{
-		TokenHash:   tokenHash,
+		TokenHash:   sessionID,
 		PhoneNumber: phoneNumber,
 	})
 	return err
@@ -53,10 +53,12 @@ func (r *SessionRepository) ValidateSession(ctx context.Context, token string) (
 }
 
 func (r *SessionRepository) GetSession(ctx context.Context, token string) (*Session, error) {
-	tokenHash := hashToken(token)
+	dbSession, err := r.queries.GetSession(ctx, token)
 
-	dbSession, err := r.queries.GetSession(ctx, tokenHash)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, err
 	}
 

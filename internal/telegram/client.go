@@ -5,7 +5,6 @@ import (
 	chat_updates "ReAction/internal/kafka/chat_updates"
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -17,18 +16,17 @@ type Client struct {
 	authState     string
 	listener      *Listener
 	config        config.TelegramConfig
-	isRunning     bool
 	mu            sync.RWMutex
 	authSessionID string
 	ctx           context.Context
 	cancelFunc    context.CancelFunc
+	authReady     chan struct{}
 	UpdatedAt     time.Time
 }
 
-func NewClientWithHTTPAuth(sessionID string, cfg config.TelegramConfig, authManager *AuthStateManager, kafkaProducer *chat_updates.ChatUpdatesProducer) (*Client, error) {
+func NewClientWithHTTPAuth(sessionID string, phoneNumber string, cfg config.TelegramConfig, authManager *AuthStateManager, kafkaProducer *chat_updates.ChatUpdatesProducer) (*Client, error) {
 	tdlib.SetLogVerbosityLevel(1)
 
-	log.Println("APi", cfg.APIID)
 	tdlibClient := tdlib.NewClient(tdlib.Config{
 		APIID:               fmt.Sprintf("%d", cfg.APIID),
 		APIHash:             cfg.APIHash,
@@ -40,12 +38,11 @@ func NewClientWithHTTPAuth(sessionID string, cfg config.TelegramConfig, authMana
 		UseFileDatabase:     true,
 		UseChatInfoDatabase: true,
 		UseTestDataCenter:   false,
-		DatabaseDirectory:   "/tdlib-db/" + sessionID,
-		FileDirectory:       "/tdlib-files/" + sessionID,
+		DatabaseDirectory:   "/app/tdlib-sessions/db/" + sessionID,
+		FileDirectory:       "/app/tdlib-sessions/files/" + sessionID,
 		IgnoreFileNames:     false,
 	})
 
-	_ = tdlibClient
 	ctx, cancel := context.WithCancel(context.Background())
 
 	client := &Client{
@@ -55,10 +52,18 @@ func NewClientWithHTTPAuth(sessionID string, cfg config.TelegramConfig, authMana
 		authSessionID: sessionID,
 		ctx:           ctx,
 		cancelFunc:    cancel,
+		authReady:     make(chan struct{}),
 	}
 
-	authManager.RegisterAuthorizer(sessionID, client)
-	client.listener.Start(ctx)
+	authManager.RegisterAuthorizer(sessionID, phoneNumber, client)
 
 	return client, nil
+}
+
+func (c *Client) GetAuthReadyChannel() <-chan struct{} {
+	return c.authReady
+}
+
+func (c *Client) GetListener() *Listener {
+	return c.listener
 }

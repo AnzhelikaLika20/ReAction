@@ -60,7 +60,7 @@ func NewAuthHandlers(
 }
 
 // @Summary Получить токен авторизации
-// @Description Создает JWT токен и сессию в БД
+// @Description Создает JWT токен
 // @Tags auth
 // @Accept json
 // @Produce json
@@ -104,9 +104,10 @@ func (h *AuthHandlers) GetToken(c *gin.Context) {
 // @Failure 500 {object} ErrorResponse
 // @Router /auth/telegram/init [post]
 func (h *AuthHandlers) InitTelegramClient(c *gin.Context) {
-	session_id := c.GetString("session_id")
+	sessionId := c.GetString("session_id")
+	phoneNumber := c.GetString("phone_number")
 
-	h.authService.CreateTdlibClient(c.Request.Context(), session_id, h.cfg, h.kafkaProducer)
+	h.authService.CreateTdlibClient(c.Request.Context(), sessionId, phoneNumber, h.cfg, h.kafkaProducer)
 
 	c.JSON(http.StatusOK, SessionResponse{
 		AuthState: "auth_initiated",

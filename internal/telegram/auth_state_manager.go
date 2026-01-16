@@ -14,7 +14,7 @@ type AuthStateManager struct {
 	clients map[string]*Client
 }
 
-func NewAuthStateManager(cleanupInterval, stateTimeout time.Duration) *AuthStateManager {
+func NewAuthStateManager() *AuthStateManager {
 	mgr := &AuthStateManager{
 		clients: make(map[string]*Client),
 	}
@@ -22,9 +22,10 @@ func NewAuthStateManager(cleanupInterval, stateTimeout time.Duration) *AuthState
 	return mgr
 }
 
-func (m *AuthStateManager) monitorAuthState(sessionID string, client *Client) {
+func (m *AuthStateManager) monitorAuthState(sessionID string, phoneNumber string, client *Client) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+	defer close(client.authReady)
 
 	for {
 		select {
@@ -49,33 +50,12 @@ func (m *AuthStateManager) monitorAuthState(sessionID string, client *Client) {
 			}
 		}
 	}
-	// authStateChan := client.tdlibClient.AddEventReceiver(
-	// 	&tdlib.UpdateAuthorizationState{},
-	// 	func(msg *tdlib.TdMessage) bool {
-	// 		return true
-	// 	},
-	// 	5,
-	// )
-
-	// go func() {
-	// 	for authUpdate := range authStateChan.Chan {
-	// 		if update, ok := authUpdate.(*tdlib.UpdateAuthorizationState); ok {
-	// 			log.Println(update.AuthorizationState)
-	// 		}
-	// 	}
-	// }()
-
-	// for {
-	// 	currentState, _ := client.tdlibClient.Authorize()
-	// 	log.Println("session_id=%s, state=%s", sessionID, string(currentState.GetAuthorizationStateEnum()))
-	// 	client.authState = string(currentState.GetAuthorizationStateEnum())
-	// }
 }
 
-func (m *AuthStateManager) RegisterAuthorizer(sessionID string, client *Client) {
+func (m *AuthStateManager) RegisterAuthorizer(sessionID string, phoneNumber string, client *Client) {
 	m.clients[sessionID] = client
 
-	go m.monitorAuthState(sessionID, client)
+	go m.monitorAuthState(sessionID, phoneNumber, client)
 }
 
 func (m *AuthStateManager) GetAuthState(id string) (string, error) {
@@ -161,7 +141,7 @@ func (m *AuthStateManager) SetPassword(id, password string) (tdlib.Authorization
 		return nil, fmt.Errorf("unexpected state %s", state)
 	}
 
-	newState, err := client.tdlibClient.SendAuthCode(password)
+	newState, err := client.tdlibClient.SendAuthPassword(password)
 	if err != nil {
 		return nil, fmt.Errorf("Error sending password: %v", err)
 	}
