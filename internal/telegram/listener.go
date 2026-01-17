@@ -5,47 +5,43 @@ import (
 	"context"
 	"log"
 
-	"github.com/zelenin/go-tdlib/client"
+	"github.com/Arman92/go-tdlib"
 )
 
 type Listener struct {
-	client        *client.Client
-	messageCh     chan *Message
-	handlers      []HandlerFunc
+	client        *tdlib.Client
 	isRunning     bool
 	cancel        context.CancelFunc
 	kafkaProducer *chat_updates.ChatUpdatesProducer
 	sessionID     string
 }
 
-func NewListener(client *client.Client, sessionID string, kafkaProducer *chat_updates.ChatUpdatesProducer) *Listener {
+func NewListener(client *tdlib.Client, sessionID string, kafkaProducer *chat_updates.ChatUpdatesProducer) *Listener {
 	return &Listener{
 		client:        client,
-		messageCh:     make(chan *Message, 100),
-		handlers:      make([]HandlerFunc, 0),
 		kafkaProducer: kafkaProducer,
 		sessionID:     sessionID,
 	}
 }
 
 func (l *Listener) getChatInfo(chatID int64) (string, string) {
-	chat, err := l.client.GetChat(&client.GetChatRequest{ChatId: chatID})
+	chat, err := l.client.GetChat(chatID)
 	if err != nil {
 		log.Printf("[TG LISTENER] Error getting chat info: %v", err)
 		return "", ""
 	}
-	return chat.Title, string(chat.Type.ChatTypeType())
+	return chat.Title, string(chat.Type.GetChatTypeEnum())
 }
 
-func (l *Listener) getUserInfo(userID int64) *User {
-	user, err := l.client.GetUser(&client.GetUserRequest{UserId: userID})
+func (l *Listener) getUserInfo(userID int32) *User {
+	user, err := l.client.GetUser(userID)
 	if err != nil {
 		log.Printf("[TG LISTENER] Error getting user info: %v", err)
 		return &User{ID: userID}
 	}
 
 	return &User{
-		ID:        user.Id,
+		ID:        user.ID,
 		FirstName: user.FirstName,
 		LastName:  user.LastName,
 	}
@@ -57,47 +53,48 @@ func (l *Listener) Start(ctx context.Context) {
 	}
 
 	l.isRunning = true
-	listener := l.client.GetListener()
 	ctx, cancel := context.WithCancel(ctx)
 	l.cancel = cancel
 
 	go func() {
 		defer func() {
-			close(l.messageCh)
-			listener.Close()
-			l.isRunning = false
+			if r := recover(); r != nil {
+				log.Printf("[TG LISTENER] PANIC RECOVERED: %v", r)
+			}
 		}()
 
-		log.Println("[TG LISTENER] Listener started, waiting for updates...")
+		eventFilter := func(msg *tdlib.TdMessage) bool {
+			updateMsg := (*msg).(*tdlib.UpdateNewMessage)
 
-		for {
-			select {
-			case <-ctx.Done():
-				log.Println("[TG LISTENER] Listener context cancelled")
-				return
-			case update, ok := <-listener.Updates:
-				if !ok {
-					log.Println("[TG LISTENER] Listener updates channel closed")
-					return
-				}
-				l.handleUpdate(update)
-			}
+			// TODO: add filtration rules
+			_ = updateMsg
+
+			return true
 		}
+
+		receiver := l.client.AddEventReceiver(&tdlib.UpdateNewMessage{}, eventFilter, 15)
+		for newMsg := range receiver.Chan {
+			updateMsg, ok := newMsg.(*tdlib.UpdateNewMessage)
+			if !ok {
+				log.Printf("[TG LISTENER] Received unexpected message type: %T", newMsg)
+				continue
+			}
+
+			if updateMsg == nil || updateMsg.Message == nil {
+				log.Printf("[TG LISTENER] Received nil message")
+				continue
+			}
+
+			log.Printf("[TG LISTENER] New message: chat_id=%d, message_id=%d",
+				updateMsg.Message.ChatID, updateMsg.Message.ID)
+
+			l.handleNewMessage(updateMsg)
+		}
+
 	}()
 }
 
-func (l *Listener) handleUpdate(update client.Type) {
-	if update.GetClass() != client.ClassUpdate {
-		return
-	}
-
-	switch update.GetType() {
-	case client.TypeUpdateNewMessage:
-		l.handleNewMessage(update.(*client.UpdateNewMessage))
-	}
-}
-
-func (l *Listener) handleNewMessage(update *client.UpdateNewMessage) {
+func (l *Listener) handleNewMessage(update *tdlib.UpdateNewMessage) {
 	message := convertMessage(update.Message)
 
 	chatTitle, chatType := l.getChatInfo(message.ChatID)
@@ -105,22 +102,13 @@ func (l *Listener) handleNewMessage(update *client.UpdateNewMessage) {
 	message.ChatType = chatType
 
 	if message.SenderID > 0 {
-		user := l.getUserInfo(message.SenderID)
-		if user != nil {
-		}
+		user := l.getUserInfo(int32(message.SenderID))
+
+		_ = user
+		//TODO: use sender info
 	}
 
 	l.sendToKafka(message, "message_new")
-
-	select {
-	case l.messageCh <- message:
-	default:
-		log.Printf("[TG LISTENER] Message channel is full, dropping message")
-	}
-
-	for _, handler := range l.handlers {
-		go handler(message)
-	}
 }
 
 func (l *Listener) sendToKafka(message *Message, eventType string) {
@@ -142,10 +130,6 @@ func (l *Listener) sendToKafka(message *Message, eventType string) {
 		Timestamp:  message.Timestamp,
 	}
 
-	if l.kafkaProducer == nil {
-		return
-	}
-
 	err := l.kafkaProducer.SendTelegramMessage(l.sessionID, messageEvent)
 	if err != nil {
 		log.Printf("[KAFKA] Failed to send message event to Kafka: %v", err)
@@ -155,20 +139,23 @@ func (l *Listener) sendToKafka(message *Message, eventType string) {
 	}
 }
 
-func convertMessage(msg *client.Message) *Message {
+func convertMessage(msg *tdlib.Message) *Message {
 	senderID := int64(0)
-	if msg.SenderId != nil {
-		switch msg.SenderId.MessageSenderType() {
-		case client.TypeMessageSenderUser:
-			senderID = msg.SenderId.(*client.MessageSenderUser).UserId
-		case client.TypeMessageSenderChat:
-			senderID = msg.SenderId.(*client.MessageSenderChat).ChatId
+
+	if msg.Sender != nil {
+		switch msg.Sender.GetMessageSenderEnum() {
+		case "messageSenderUser":
+			senderUser := msg.Sender.(*tdlib.MessageSenderUser)
+			senderID = int64(senderUser.UserID)
+		case "messageSenderChat":
+			senderChat := msg.Sender.(*tdlib.MessageSenderChat)
+			senderID = senderChat.ChatID
 		}
 	}
 
 	return &Message{
-		ID:         msg.Id,
-		ChatID:     msg.ChatId,
+		ID:         msg.ID,
+		ChatID:     msg.ChatID,
 		Text:       extractText(msg),
 		SenderID:   senderID,
 		Timestamp:  int64(msg.Date),
@@ -176,22 +163,20 @@ func convertMessage(msg *client.Message) *Message {
 	}
 }
 
-func extractText(msg *client.Message) string {
-	switch msg.Content.MessageContentType() {
-	case client.TypeMessageText:
-		if text, ok := msg.Content.(*client.MessageText); ok {
-			return text.Text.Text
-		}
-	case client.TypeMessagePhoto:
+func extractText(msg *tdlib.Message) string {
+	switch msg.Content.GetMessageContentEnum() {
+	case "messageText":
+		messageText := msg.Content.(*tdlib.MessageText)
+		return messageText.Text.Text
+	case "messagePhoto":
 		return "[Photo]"
-	case client.TypeMessageDocument:
+	case "messageDocument":
 		return "[Document]"
-	case client.TypeMessageSticker:
+	case "messageSticker":
 		return "[Sticker]"
 	default:
-		return "[" + msg.Content.MessageContentType() + "]"
+		return "[" + string(msg.Content.GetMessageContentEnum()) + "]"
 	}
-	return ""
 }
 
 func (l *Listener) Stop() {

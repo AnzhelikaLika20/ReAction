@@ -10,10 +10,14 @@ services:
       - .env
     ports:
       - "0.0.0.0:8080:8080"
+    volumes:
+      - tdlib_sessions:/app/tdlib-sessions
     depends_on:
       kafka:
         condition: service_healthy
-    command: sh -c "echo 'Waiting for Kafka...' && sleep 10 && ./main"
+      postgres:
+        condition: service_healthy
+    command: sh -c "echo 'Waiting for Kafka...' && sleep 2 && ./main"
 
   kafka:
     image: apache/kafka:3.7.0
@@ -42,9 +46,34 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    volumes:
+      - kafka_data:/var/lib/kafka/data
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
       interval: 10s
       timeout: 15s
       retries: 20
       start_period: 45s
+  
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123456
+      POSTGRES_DB: reaction
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d reaction"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  postgres_data:
+  kafka_data:
+  tdlib_sessions:

@@ -2,4 +2,3 @@
 .gitignore
 *.md
 .tdlib/
-vendor/

@@ -5,42 +5,43 @@ import (
 	chat_updates "ReAction/internal/kafka/chat_updates"
 	"context"
 	"fmt"
-	"log"
 	"sync"
+	"time"
 
-	"github.com/zelenin/go-tdlib/client"
+	"github.com/Arman92/go-tdlib"
 )
 
 type Client struct {
-	tdlibClient   *client.Client
+	tdlibClient   *tdlib.Client
+	authState     string
 	listener      *Listener
 	config        config.TelegramConfig
-	isRunning     bool
 	mu            sync.RWMutex
 	authSessionID string
 	ctx           context.Context
 	cancelFunc    context.CancelFunc
+	authReady     chan struct{}
+	UpdatedAt     time.Time
 }
 
-func setupLogging() error {
-	_, err := client.SetLogVerbosityLevel(&client.SetLogVerbosityLevelRequest{
-		NewVerbosityLevel: 1,
+func NewClientWithHTTPAuth(sessionID string, phoneNumber string, cfg config.TelegramConfig, authManager *AuthStateManager, kafkaProducer *chat_updates.ChatUpdatesProducer) (*Client, error) {
+	tdlib.SetLogVerbosityLevel(1)
+
+	tdlibClient := tdlib.NewClient(tdlib.Config{
+		APIID:               fmt.Sprintf("%d", cfg.APIID),
+		APIHash:             cfg.APIHash,
+		SystemLanguageCode:  "en",
+		DeviceModel:         "Server",
+		SystemVersion:       "1.0.0",
+		ApplicationVersion:  "1.0.0",
+		UseMessageDatabase:  true,
+		UseFileDatabase:     true,
+		UseChatInfoDatabase: true,
+		UseTestDataCenter:   false,
+		DatabaseDirectory:   "/app/tdlib-sessions/db/" + sessionID,
+		FileDirectory:       "/app/tdlib-sessions/files/" + sessionID,
+		IgnoreFileNames:     false,
 	})
-	return err
-}
-
-func NewClientWithHTTPAuth(sessionID string, cfg config.TelegramConfig, authManager *AuthStateManager, kafkaProducer *chat_updates.ChatUpdatesProducer) (*Client, *SimpleAuthorizer, error) {
-	if err := setupLogging(); err != nil {
-		log.Printf("[TELEGRAM] Warning: failed to setup logging: %v", err)
-	}
-
-	authorizer := NewSimpleAuthorizer(cfg)
-	authManager.RegisterAuthorizer(sessionID, authorizer)
-
-	tdlibClient, err := client.NewClient(authorizer)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create client: %w", err)
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -51,9 +52,18 @@ func NewClientWithHTTPAuth(sessionID string, cfg config.TelegramConfig, authMana
 		authSessionID: sessionID,
 		ctx:           ctx,
 		cancelFunc:    cancel,
+		authReady:     make(chan struct{}),
 	}
 
-	client.listener.Start(ctx)
+	authManager.RegisterAuthorizer(sessionID, phoneNumber, client)
 
-	return client, authorizer, nil
+	return client, nil
+}
+
+func (c *Client) GetAuthReadyChannel() <-chan struct{} {
+	return c.authReady
+}
+
+func (c *Client) GetListener() *Listener {
+	return c.listener
 }

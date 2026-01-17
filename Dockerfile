@@ -46,9 +46,9 @@ RUN rm -rf build && mkdir build && cd build && \
 
 WORKDIR /app
 
-# COPY vendor ./vendor
+COPY vendor ./vendor
 
-# COPY go.mod go.sum ./
+COPY go.mod go.sum ./
 
 COPY . .
 
@@ -56,9 +56,9 @@ ENV CGO_ENABLED=1 \
     CGO_CFLAGS="-I/usr/local/include" \
     CGO_LDFLAGS="-L/usr/local/lib -ltdjson -Wl,-rpath,/usr/local/lib"
 
-RUN swag init -g ./cmd/main.go -o ./docs --quiet
+# RUN swag init -g ./cmd/main.go -o ./docs --quiet
 
-# RUN go build -mod=vendor -o main ./cmd
+RUN go build -mod=vendor -o main ./cmd
 
 RUN go build -o main ./cmd
 

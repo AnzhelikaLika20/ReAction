@@ -16,6 +16,10 @@ clean:
 	docker compose down -v
 	docker system prune -f
 
+# go install github.com/swaggo/swag/cmd/swag@latest
+# echo 'export PATH=$PATH:$HOME/go/bin' >> ~/.bashrc
+# source ~/.bashrc
+# which swag
 swag:
 	swag init -g ./cmd/main.go -o ./docs --quiet
 

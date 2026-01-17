@@ -13,7 +13,7 @@ type Message struct {
 }
 
 type User struct {
-	ID        int64
+	ID        int32
 	FirstName string
 	LastName  string
 }
