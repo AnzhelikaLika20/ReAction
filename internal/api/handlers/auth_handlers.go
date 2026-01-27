@@ -3,7 +3,7 @@ package handlers
 import (
 	"ReAction/internal/config"
 	chat_updates "ReAction/internal/kafka/chat_updates"
-	"ReAction/internal/services"
+	"ReAction/internal/services/auth"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -42,13 +42,13 @@ type SessionResponse struct {
 }
 
 type AuthHandlers struct {
-	authService   *services.AuthService
+	authService   *auth.AuthService
 	cfg           config.TelegramConfig
 	kafkaProducer *chat_updates.ChatUpdatesProducer
 }
 
 func NewAuthHandlers(
-	authService *services.AuthService,
+	authService *auth.AuthService,
 	cfg config.TelegramConfig,
 	kafkaProducer *chat_updates.ChatUpdatesProducer,
 ) *AuthHandlers {

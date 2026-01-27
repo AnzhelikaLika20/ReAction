@@ -3,6 +3,7 @@ package chat_updates
 import (
 	"ReAction/internal/config"
 	"ReAction/internal/kafka/user_actions"
+	"ReAction/internal/services/ai"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,6 +23,7 @@ type ChatUpdatesConsumer struct {
 	cancel             context.CancelFunc
 	mu                 sync.RWMutex
 	userActionProducer *user_actions.UserActionProducer
+	aiService          *ai.AIService
 }
 
 type ConversationMessage struct {
@@ -43,7 +45,7 @@ type ConversationMessage struct {
 	Partition       int       `json:"-"`
 }
 
-func NewChatUpdatesConsumer(cfg config.KafkaConfig, user_actions_producer *user_actions.UserActionProducer) (*ChatUpdatesConsumer, error) {
+func NewChatUpdatesConsumer(cfg config.KafkaConfig, userActionsProducer *user_actions.UserActionProducer, aiService *ai.AIService) (*ChatUpdatesConsumer, error) {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:        []string{cfg.Broker},
 		Topic:          cfg.ChatUpdatesTopic,
@@ -59,7 +61,8 @@ func NewChatUpdatesConsumer(cfg config.KafkaConfig, user_actions_producer *user_
 		reader:             reader,
 		config:             cfg,
 		topic:              cfg.ChatUpdatesTopic,
-		userActionProducer: user_actions_producer,
+		userActionProducer: userActionsProducer,
+		aiService:          aiService,
 	}
 
 	return c, nil
@@ -129,26 +132,40 @@ func (c *ChatUpdatesConsumer) processKafkaMessage(msg kafka.Message) {
 }
 
 func (c *ChatUpdatesConsumer) ScheduleActionIfNeeded(msg ConversationMessage) {
-	if strings.Contains(strings.ToLower(msg.Text), "молоко") {
-		// TODO: поменять ключ шардирования
-		log.Printf("[CHAT-UPDATES] Found 'молоко' in message for %s", msg.SessionID)
+	// TODO: поменять ключ шардирования
+	if c.userActionProducer != nil && c.userActionProducer.IsReady() {
+		reminderAction, err := c.userActionProducer.ParseAndSendReminderFromText(
+			msg.SessionID,
+			msg.Text,
+		)
 
-		if c.userActionProducer != nil && c.userActionProducer.IsReady() {
-			reminderAction, err := c.userActionProducer.ParseAndSendReminderFromText(
-				msg.SessionID,
-				msg.Text,
-			)
-
-			if err != nil {
-				log.Printf("[CHAT-UPDATES] Failed to create reminder: %v", err)
-			} else if reminderAction != nil {
-				log.Printf("[CHAT-UPDATES] Reminder created for %s: '%s'",
-					msg.SessionID,
-					reminderAction.Reminder.Title)
-			}
-		} else {
-			log.Printf("[CHAT-UPDATES] UserAction producer not available")
+		if msg.Text == "" {
+			return
 		}
+
+		ctx, _ := context.WithTimeout(context.Background(), 100*time.Second)
+		result, err := c.aiService.CheckMessage(ctx, msg.Text, "promise")
+		if err != nil {
+			log.Println("Failed to check message with AI",
+				"chat_id", msg.ChatID, "error", err)
+		}
+
+		if result.Detected && result.Confidence > 0.7 {
+			log.Println("Promise detected in message",
+				"chat_id", msg.ChatID,
+				"confidence", result.Confidence,
+				"reason", result.Reason)
+		}
+
+		if err != nil {
+			log.Printf("[CHAT-UPDATES] Failed to create reminder: %v", err)
+		} else if reminderAction != nil {
+			log.Printf("[CHAT-UPDATES] Reminder created for %s: '%s'",
+				msg.SessionID,
+				reminderAction.Reminder.Title)
+		}
+	} else {
+		log.Printf("[CHAT-UPDATES] UserAction producer not available")
 	}
 }
 

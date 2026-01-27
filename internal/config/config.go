@@ -14,6 +14,7 @@ type AppConfig struct {
 	Kafka    KafkaConfig
 	Database Database
 	JWT      JWTConfig
+	AIConfig AIConfig
 }
 
 type ServerConfig struct {
@@ -48,6 +49,12 @@ type Database struct {
 type JWTConfig struct {
 	SecretKey     string        `env:"JWT_SECRET_KEY,required"`
 	TokenDuration time.Duration `env:"JWT_TOKEN_DURATION" envDefault:"24h"`
+}
+
+type AIConfig struct {
+	APIKey         string `yaml:"api_key" env:"YANDEX_AI_API_KEY"`
+	FolderID       string `yaml:"folder_id" env:"YANDEX_AI_FOLDER_ID"`
+	YandexIamToken string `yaml:"folder_id" env:"YANDEX_IAM_TOKEN"`
 }
 
 func Load() (*AppConfig, error) {
@@ -90,6 +97,12 @@ func Load() (*AppConfig, error) {
 	cfg.JWT = JWTConfig{
 		SecretKey:     GetEnv("JWT_SECRET_KEY", "very-very-secret-key"),
 		TokenDuration: jwtDuration,
+	}
+
+	cfg.AIConfig = AIConfig{
+		APIKey:         GetEnv("YANDEX_AI_API_KEY", ""),
+		FolderID:       GetEnv("YANDEX_AI_FOLDER_ID", ""),
+		YandexIamToken: GetEnv("YANDEX_IAM_TOKEN", ""),
 	}
 
 	return cfg, nil

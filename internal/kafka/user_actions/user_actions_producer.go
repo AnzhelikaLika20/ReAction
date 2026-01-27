@@ -21,7 +21,6 @@ type UserActionProducer struct {
 }
 
 func NewUserActionProducer(cfg config.KafkaConfig) (*UserActionProducer, error) {
-	log.Println("[USER-ACTIONS] Creating UserAction producer...")
 	conn, err := kafka.DialLeader(context.Background(), "tcp", cfg.Broker, cfg.UserActionsTopic, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Kafka at %s: %w", cfg.Broker, err)
