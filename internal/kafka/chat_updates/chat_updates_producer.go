@@ -65,11 +65,6 @@ func (p *ChatUpdatesProducer) getWriter(topic string) *kafka.Writer {
 		Completion: func(messages []kafka.Message, err error) {
 			if err != nil {
 				log.Printf("[KAFKA] Kafka delivery error for topic %s: %v", topic, err)
-			} else {
-				for _, msg := range messages {
-					log.Printf("[KAFKA] Message delivered to topic %s (partition: %d, offset: %d)",
-						topic, msg.Partition, msg.Offset)
-				}
 			}
 		},
 	}

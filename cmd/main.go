@@ -6,7 +6,8 @@ import (
 	"ReAction/internal/config"
 	"ReAction/internal/kafka/chat_updates"
 	"ReAction/internal/kafka/user_actions"
-	"ReAction/internal/services"
+	"ReAction/internal/services/ai"
+	"ReAction/internal/services/auth"
 	"ReAction/internal/storage"
 	"ReAction/internal/telegram"
 	"context"
@@ -52,7 +53,7 @@ func main() {
 
 	authManager := telegram.NewAuthStateManager()
 
-	authService := services.NewAuthService(
+	authService := auth.NewAuthService(
 		jwtService,
 		userRepo,
 		sessionRepo,
@@ -77,7 +78,12 @@ func main() {
 	}
 	defer userActionsConsumer.Stop()
 
-	chatUpdatesConsumer, err := chat_updates.NewChatUpdatesConsumer(cfg.Kafka, userActionsProducer)
+	aiService, err := ai.NewYandexGPTService(cfg)
+	if err != nil {
+		log.Fatal("Failed to create AI service", "error", err)
+	}
+
+	chatUpdatesConsumer, err := chat_updates.NewChatUpdatesConsumer(cfg.Kafka, userActionsProducer, aiService)
 	if err != nil {
 		log.Panic("[KAFKA] Failed to create Kafka consumer: %v", err)
 	}
@@ -89,21 +95,18 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Println("[KAFKA] Starting user actions consumer...")
 		userActionsConsumer.Start(consumersCtx)
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Println("[KAFKA] Starting chat updates consumer...")
 		chatUpdatesConsumer.Start(consumersCtx)
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Printf("[HTTP] Starting server on port %s...", cfg.Server.Port)
 		api.RunHTTPServer(*cfg, authService, chatUpdatesProducer)
 	}()
 

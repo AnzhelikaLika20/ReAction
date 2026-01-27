@@ -66,10 +66,11 @@ func (l *Listener) Start(ctx context.Context) {
 		eventFilter := func(msg *tdlib.TdMessage) bool {
 			updateMsg := (*msg).(*tdlib.UpdateNewMessage)
 
-			// TODO: add filtration rules
-			_ = updateMsg
+			if updateMsg.Message.ChatID == 8562399145 {
+				return true
+			}
 
-			return true
+			return false
 		}
 
 		receiver := l.client.AddEventReceiver(&tdlib.UpdateNewMessage{}, eventFilter, 15)
@@ -84,9 +85,6 @@ func (l *Listener) Start(ctx context.Context) {
 				log.Printf("[TG LISTENER] Received nil message")
 				continue
 			}
-
-			log.Printf("[TG LISTENER] New message: chat_id=%d, message_id=%d",
-				updateMsg.Message.ChatID, updateMsg.Message.ID)
 
 			l.handleNewMessage(updateMsg)
 		}
@@ -133,9 +131,6 @@ func (l *Listener) sendToKafka(message *Message, eventType string) {
 	err := l.kafkaProducer.SendTelegramMessage(l.sessionID, messageEvent)
 	if err != nil {
 		log.Printf("[KAFKA] Failed to send message event to Kafka: %v", err)
-	} else {
-		log.Printf("[KAFKA] Sent message event to Kafka: %s (message_id: %d)",
-			messageEvent.EventType, messageEvent.MessageID)
 	}
 }
 

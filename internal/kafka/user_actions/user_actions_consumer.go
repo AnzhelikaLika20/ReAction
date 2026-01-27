@@ -26,8 +26,6 @@ type UserActionConsumer struct {
 type UserActionHandler func(action *UserActionEvent) error
 
 func NewUserActionConsumer(cfg config.KafkaConfig) (*UserActionConsumer, error) {
-	log.Println("[USER-ACTIONS] Creating UserAction consumer...")
-
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:        []string{cfg.Broker},
 		Topic:          "user-actions",
@@ -65,9 +63,6 @@ func (c *UserActionConsumer) Start(ctx context.Context) error {
 			c.isRunning = false
 			log.Printf("[USER-ACTIONS] Consumer stopped for topic: %s", c.topic)
 		}()
-
-		log.Printf("[USER-ACTIONS] Consumer started for topic: %s", c.topic)
-		log.Println("[USER-ACTIONS] Listening for user actions...")
 
 		for {
 			select {

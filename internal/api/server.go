@@ -4,7 +4,7 @@ import (
 	"ReAction/internal/api/handlers"
 	"ReAction/internal/config"
 	chat_updates "ReAction/internal/kafka/chat_updates"
-	"ReAction/internal/services"
+	"ReAction/internal/services/auth"
 	"ReAction/internal/web"
 	"log"
 
@@ -15,7 +15,7 @@ import (
 
 func RunHTTPServer(
 	cfg config.AppConfig,
-	authService *services.AuthService,
+	authService *auth.AuthService,
 	kafkaProducer *chat_updates.ChatUpdatesProducer,
 ) {
 	gin.SetMode(gin.ReleaseMode)
@@ -37,7 +37,7 @@ func RunHTTPServer(
 	router.Run(":" + cfg.Server.Port)
 }
 
-func jwtMiddleware(authService *services.AuthService) gin.HandlerFunc {
+func jwtMiddleware(authService *auth.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if isPublicRoute(c.Request.URL.Path) {
 			c.Next()
