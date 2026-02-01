@@ -40,7 +40,7 @@ func (m *AuthStateManager) monitorAuthState(sessionID string, phoneNumber string
 			log.Printf("session_id=%s, state=%s", sessionID, stateStr)
 
 			client.mu.Lock()
-			client.authState = stateStr
+			client.authState = ConvertAuthState(currentState.GetAuthorizationStateEnum())
 			client.UpdatedAt = time.Now()
 			client.mu.Unlock()
 
@@ -58,13 +58,13 @@ func (m *AuthStateManager) RegisterAuthorizer(sessionID string, phoneNumber stri
 	go m.monitorAuthState(sessionID, phoneNumber, client)
 }
 
-func (m *AuthStateManager) GetAuthState(id string) (string, error) {
+func (m *AuthStateManager) GetAuthState(id string) string {
 	client, exists := m.clients[id]
 	if !exists {
-		return "", fmt.Errorf("client not found")
+		return "unknown"
 	}
 
-	return client.authState, nil
+	return client.authState
 }
 
 func (m *AuthStateManager) SetPhoneNumber(id, phoneNumber string) (tdlib.AuthorizationState, error) {
@@ -76,12 +76,9 @@ func (m *AuthStateManager) SetPhoneNumber(id, phoneNumber string) (tdlib.Authori
 		return nil, fmt.Errorf("client not found")
 	}
 
-	state, err := m.GetAuthState(id)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get state")
-	}
+	state := m.GetAuthState(id)
 
-	if state != string(tdlib.AuthorizationStateWaitPhoneNumberType) {
+	if state != "wait_phone" {
 		return nil, fmt.Errorf("unexpected state %s", state)
 	}
 
@@ -104,12 +101,9 @@ func (m *AuthStateManager) SetCode(id, code string) (tdlib.AuthorizationState, e
 		return nil, fmt.Errorf("client not found")
 	}
 
-	state, err := m.GetAuthState(id)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get state")
-	}
+	state := m.GetAuthState(id)
 
-	if state != string(tdlib.AuthorizationStateWaitCodeType) {
+	if state != "wait_code" {
 		return nil, fmt.Errorf("unexpected state %s", state)
 	}
 
@@ -132,12 +126,9 @@ func (m *AuthStateManager) SetPassword(id, password string) (tdlib.Authorization
 		return nil, fmt.Errorf("client not found")
 	}
 
-	state, err := m.GetAuthState(id)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get state")
-	}
+	state := m.GetAuthState(id)
 
-	if state != string(tdlib.AuthorizationStateWaitPasswordType) {
+	if state != "wait_password" {
 		return nil, fmt.Errorf("unexpected state %s", state)
 	}
 
@@ -149,4 +140,22 @@ func (m *AuthStateManager) SetPassword(id, password string) (tdlib.Authorization
 	client.UpdatedAt = time.Now()
 
 	return newState, nil
+}
+
+func ConvertAuthState(state tdlib.AuthorizationStateEnum) string {
+	switch state {
+	case tdlib.AuthorizationStateWaitTdlibParametersType:
+		return "inited"
+	case tdlib.AuthorizationStateWaitPhoneNumberType:
+		return "wait_phone"
+	case tdlib.AuthorizationStateWaitCodeType:
+		return "wait_code"
+	case tdlib.AuthorizationStateWaitPasswordType:
+		return "wait_password"
+	case tdlib.AuthorizationStateReadyType:
+		return "ready"
+	default:
+		log.Println("Unknown state=%s", string(state))
+		return "unknown"
+	}
 }

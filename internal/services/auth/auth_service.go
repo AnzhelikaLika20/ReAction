@@ -135,14 +135,10 @@ func (s *AuthService) CreateTdlibClient(ctx context.Context, sessionID string, p
 	}()
 }
 
-func (s *AuthService) GetAuthState(ctx context.Context, sessionID string) (string, error) {
-	state, err := s.authManager.GetAuthState(sessionID)
+func (s *AuthService) GetAuthState(ctx context.Context, sessionID string) string {
+	state := s.authManager.GetAuthState(sessionID)
 
-	if err != nil {
-		return "", err
-	}
-
-	return string(state), nil
+	return string(state)
 }
 
 func (s *AuthService) GetTokenDuration() time.Duration {
