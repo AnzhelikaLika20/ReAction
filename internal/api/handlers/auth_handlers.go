@@ -4,6 +4,7 @@ import (
 	"ReAction/internal/config"
 	chat_updates "ReAction/internal/kafka/chat_updates"
 	"ReAction/internal/services/auth"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -220,11 +221,8 @@ func (h *AuthHandlers) SetPassword(c *gin.Context) {
 func (h *AuthHandlers) GetSessionStatus(c *gin.Context) {
 	sessionId := c.GetString("session_id")
 
-	state, err := h.authService.GetAuthState(c.Request.Context(), sessionId)
-	if err != nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Session not found"})
-		return
-	}
+	state := h.authService.GetAuthState(c.Request.Context(), sessionId)
+	log.Printf("state=%s", state)
 
 	c.JSON(http.StatusOK, SessionResponse{
 		AuthState: state,

@@ -2,7 +2,6 @@ package main
 
 import (
 	"ReAction/internal/api"
-	"ReAction/internal/auth"
 	"ReAction/internal/config"
 	"ReAction/internal/kafka/chat_updates"
 	"ReAction/internal/kafka/user_actions"

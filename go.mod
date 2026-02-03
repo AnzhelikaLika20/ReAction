@@ -67,6 +67,7 @@ require (
 
 require (
 	github.com/Arman92/go-tdlib v1.0.0
+	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.8.0
