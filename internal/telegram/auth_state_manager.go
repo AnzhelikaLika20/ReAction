@@ -159,3 +159,11 @@ func ConvertAuthState(state tdlib.AuthorizationStateEnum) string {
 		return "unknown"
 	}
 }
+
+func (m *AuthStateManager) GetClientBySessionId(sessionId string) *Client {
+	client, exists := m.clients[sessionId]
+	if !exists {
+		return nil
+	}
+	return client
+}

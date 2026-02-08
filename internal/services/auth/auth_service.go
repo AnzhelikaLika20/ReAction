@@ -8,8 +8,11 @@ import (
 
 	"ReAction/internal/config"
 	"ReAction/internal/kafka/chat_updates"
+	"ReAction/internal/services/chats"
 	"ReAction/internal/storage"
 	"ReAction/internal/telegram"
+
+	"github.com/Arman92/go-tdlib"
 )
 
 type AuthService struct {
@@ -17,6 +20,7 @@ type AuthService struct {
 	userRepo    *storage.UserRepository
 	sessionRepo *storage.SessionRepository
 	authManager *telegram.AuthStateManager
+	chatService *chats.ChatService
 }
 
 func NewAuthService(
@@ -24,12 +28,14 @@ func NewAuthService(
 	userRepo *storage.UserRepository,
 	sessionRepo *storage.SessionRepository,
 	authManager *telegram.AuthStateManager,
+	chatService *chats.ChatService,
 ) *AuthService {
 	return &AuthService{
 		jwtService:  jwtService,
 		userRepo:    userRepo,
 		sessionRepo: sessionRepo,
 		authManager: authManager,
+		chatService: chatService,
 	}
 }
 
@@ -90,7 +96,7 @@ func (s *AuthService) SetPassword(ctx context.Context, sessionID, password strin
 
 func (s *AuthService) CreateTdlibClient(ctx context.Context, sessionID string, phoneNumber string, cfg config.TelegramConfig, producer *chat_updates.ChatUpdatesProducer) {
 	go func() {
-		client, err := telegram.NewClientWithHTTPAuth(sessionID, phoneNumber, cfg, s.authManager, producer)
+		client, err := telegram.NewClientWithHTTPAuth(sessionID, phoneNumber, cfg, s.authManager, s.chatService, producer)
 		if err != nil {
 			log.Printf("[TELEGRAM] ERROR: Failed to create Telegram client for session %s: %v", sessionID, err)
 			return
@@ -133,6 +139,19 @@ func (s *AuthService) CreateTdlibClient(ctx context.Context, sessionID string, p
 
 		log.Printf("[TELEGRAM] Telegram client created successfully for session %s", sessionID)
 	}()
+}
+
+func (s *AuthService) GetUserChats(ctx context.Context, sessionID string) ([]*tdlib.Chat, error) {
+	client := s.authManager.GetClientBySessionId(sessionID)
+
+	chats, err := client.GetUserChats()
+	if err != nil {
+		return nil, fmt.Errorf("Error while getting user chats: %w", err)
+	}
+
+	log.Println(len(chats))
+
+	return chats, nil
 }
 
 func (s *AuthService) GetAuthState(ctx context.Context, sessionID string) string {

@@ -31,4 +31,5 @@ type User struct {
 	IsActive    pgtype.Bool
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
+	Chats       []int64
 }
