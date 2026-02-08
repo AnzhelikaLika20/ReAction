@@ -8,6 +8,18 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Scenario struct {
+	ID          pgtype.UUID
+	PhoneNumber string
+	Title       string
+	Description pgtype.Text
+	Conditions  []byte
+	Params      []byte
+	IsActive    pgtype.Bool
+	CreatedAt   pgtype.Timestamp
+	UpdatedAt   pgtype.Timestamp
+}
+
 type Session struct {
 	TokenHash   string
 	PhoneNumber string

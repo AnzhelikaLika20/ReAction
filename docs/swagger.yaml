@@ -49,9 +49,233 @@ definitions:
       token_type:
         type: string
     type: object
+  scenarios.CreateScenarioDTO:
+    properties:
+      is_active:
+        type: boolean
+      name:
+        type: string
+      reminder_description_template:
+        type: string
+      reminder_minutes_before:
+        minimum: 0
+        type: integer
+      reminder_title_template:
+        type: string
+      trigger_phrase:
+        type: string
+    required:
+    - name
+    - reminder_minutes_before
+    - reminder_title_template
+    - trigger_phrase
+    type: object
+  scenarios.ScenarioResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      reminder_description_template:
+        type: string
+      reminder_minutes_before:
+        type: integer
+      reminder_title_template:
+        type: string
+      trigger_phrase:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  scenarios.UpdateScenarioDTO:
+    properties:
+      is_active:
+        type: boolean
+      name:
+        type: string
+      reminder_description_template:
+        type: string
+      reminder_minutes_before:
+        type: integer
+      reminder_title_template:
+        type: string
+      trigger_phrase:
+        type: string
+    type: object
 info:
   contact: {}
 paths:
+  /api/scenarios:
+    get:
+      description: Возвращает список всех сценариев пользователя
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/scenarios.ScenarioResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Получить все сценарии пользователя
+      tags:
+      - scenarios
+    post:
+      consumes:
+      - application/json
+      description: Создает новый сценарий для пользователя
+      parameters:
+      - description: Данные сценария
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/scenarios.CreateScenarioDTO'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/scenarios.ScenarioResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Создать новый сценарий
+      tags:
+      - scenarios
+  /api/scenarios/{id}:
+    delete:
+      description: Удаляет сценарий пользователя
+      parameters:
+      - description: ID сценария
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Удалить сценарий
+      tags:
+      - scenarios
+    get:
+      description: Возвращает сценарий по ID
+      parameters:
+      - description: ID сценария
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/scenarios.ScenarioResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Получить сценарий по ID
+      tags:
+      - scenarios
+    put:
+      consumes:
+      - application/json
+      description: Обновляет существующий сценарий
+      parameters:
+      - description: ID сценария
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Данные для обновления
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/scenarios.UpdateScenarioDTO'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/scenarios.ScenarioResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Обновить сценарий
+      tags:
+      - scenarios
   /auth/session/status:
     get:
       description: Возвращает текущий статус сессии

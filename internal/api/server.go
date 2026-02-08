@@ -4,6 +4,7 @@ import (
 	"ReAction/internal/api/handlers"
 	"ReAction/internal/config"
 	chat_updates "ReAction/internal/kafka/chat_updates"
+	scenarios "ReAction/internal/services"
 	"ReAction/internal/services/auth"
 	"ReAction/internal/web"
 	"log"
@@ -17,13 +18,14 @@ import (
 func RunHTTPServer(
 	cfg config.AppConfig,
 	authService *auth.AuthService,
+	scenarioService *scenarios.ScenarioService,
 	kafkaProducer *chat_updates.ChatUpdatesProducer,
 ) {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
 
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5174"},
+		AllowOrigins:     []string{"http://localhost:5174", "http://localhost:5173"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "Access-Control-Allow-Origin"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -39,9 +41,11 @@ func RunHTTPServer(
 		cfg.Telegram,
 		kafkaProducer,
 	)
+	scenarioHandler := handlers.NewScenarioHandler(scenarioService)
 
 	authHandlers.RegisterAuthRoutes(router)
 	handlers.RegisterHealthRoutes(router)
+	scenarioHandler.RegisterScenarioRoutes(router)
 
 	log.Println("listening on http://localhost:" + cfg.Server.Port)
 	router.Run(":" + cfg.Server.Port)

@@ -135,6 +135,13 @@ func (h *AuthHandlers) SetPhoneNumber(c *gin.Context) {
 		return
 	}
 
+	state := h.authService.GetAuthState(c.Request.Context(), sessionId)
+	if state == "ready" {
+		c.JSON(http.StatusOK, SessionResponse{
+			AuthState: state,
+		})
+	}
+
 	state, err := h.authService.SetPhoneNumber(c.Request.Context(), sessionId, req.PhoneNumber)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
