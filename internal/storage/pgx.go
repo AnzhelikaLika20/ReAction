@@ -3,8 +3,8 @@ package storage
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
+	"time"
 
 	"ReAction/internal/config"
 	"ReAction/internal/storage/sqlc/gen"
@@ -21,37 +21,43 @@ type PostgresStorage struct {
 }
 
 func NewPostgresStorage(ctx context.Context, cfg config.Database) (*PostgresStorage, error) {
-	dsn := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s",
-		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName,
-	)
+	connstring := fmt.Sprintf(
+		"host=%s port=%s dbname=%s user=%s password=%s sslmode=require target_session_attrs=read-write",
+		cfg.Host, cfg.Port, cfg.DBName, cfg.User, cfg.Password)
 
-	poolCfg, err := pgxpool.ParseConfig(dsn)
+	connConfig, err := pgxpool.ParseConfig(connstring)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse connection string: %w", err)
+		return nil, fmt.Errorf("Unable to parse config: %v\n", err)
 	}
 
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create connection pool: %w", err)
-	}
+	connectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 
-	if err := pool.Ping(ctx); err != nil {
-		return nil, fmt.Errorf("failed to ping database: %w", err)
+	pool, err := pgxpool.NewWithConfig(connectCtx, connConfig)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to connect to database: %v\n", err)
 	}
 
 	queries := db.New(pool)
-
 	storage := &PostgresStorage{
 		pool:    pool,
 		Queries: queries,
 	}
 
-	if err := storage.applyMigrations(dsn); err != nil {
+	if err := storage.applyMigrations(connstring); err != nil {
+		pool.Close()
 		return nil, fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
-	log.Println("PostgreSQL storage initialized successfully")
+	var version string
+	err = pool.QueryRow(context.Background(), "select version()").Scan(&version)
+	if err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("QueryRow failed: %v\n", err)
+	}
+
+	fmt.Println(version)
+
 	return storage, nil
 }
 
@@ -62,7 +68,7 @@ func (s *PostgresStorage) applyMigrations(dsn string) error {
 	}
 	defer db.Close(context.Background())
 
-	sqlDB := stdlib.OpenDBFromPool(s.pool)
+	sqlDB := stdlib.OpenDB(*db.Config())
 	defer sqlDB.Close()
 
 	if err := goose.SetDialect("postgres"); err != nil {
@@ -84,7 +90,9 @@ func (s *PostgresStorage) applyMigrations(dsn string) error {
 }
 
 func (s *PostgresStorage) Close() {
-	s.pool.Close()
+	if s.pool != nil {
+		s.pool.Close()
+	}
 }
 
 func (s *PostgresStorage) BeginTx(ctx context.Context) (pgx.Tx, error) {

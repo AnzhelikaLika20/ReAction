@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 type Claims struct {
@@ -30,12 +31,10 @@ func NewJWTService(
 }
 
 func (s *JWTService) GenerateToken(phoneNumber string) (string, error) {
-	// TODO: generate ID
-	// generatedId, _ := uuid.NewUUID()
-	generatedId := "e3f766fd-f2f4-11f0-ab19-e627c684288d"
+	generatedId, _ := uuid.NewUUID()
 	claims := &Claims{
 		PhoneNumber: phoneNumber,
-		SessionID:   generatedId,
+		SessionID:   generatedId.String(),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.tokenDuration)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

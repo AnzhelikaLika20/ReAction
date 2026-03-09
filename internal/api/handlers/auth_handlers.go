@@ -111,7 +111,7 @@ func (h *AuthHandlers) InitTelegramClient(c *gin.Context) {
 	h.authService.CreateTdlibClient(c.Request.Context(), sessionId, phoneNumber, h.cfg, h.kafkaProducer)
 
 	c.JSON(http.StatusOK, SessionResponse{
-		AuthState: "auth_initiated",
+		AuthState: "inited",
 	})
 }
 
