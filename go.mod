@@ -3,6 +3,7 @@ module ReAction
 go 1.24.5
 
 require (
+	github.com/Arman92/go-tdlib v1.0.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/joho/godotenv v1.5.1
 	github.com/swaggo/files v1.0.1
@@ -66,7 +67,6 @@ require (
 )
 
 require (
-	github.com/Arman92/go-tdlib v1.0.0
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/uuid v1.6.0
@@ -75,3 +75,5 @@ require (
 	github.com/segmentio/kafka-go v0.4.49
 	golang.org/x/sys v0.39.0 // indirect
 )
+
+replace github.com/Arman92/go-tdlib => github.com/AnzhelikaLika20/go-tdlib v0.0.0-20260308132115-0066ed58b82b

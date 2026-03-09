@@ -22,8 +22,9 @@ type ServerConfig struct {
 }
 
 type TelegramConfig struct {
-	APIID   int32
-	APIHash string
+	APIID    int32
+	APIHash  string
+	LogLevel int32
 }
 
 type LoggingConfig struct {
@@ -67,8 +68,11 @@ func Load() (*AppConfig, error) {
 	cfg.Telegram.APIID = int32(apiID)
 	cfg.Telegram.APIHash = GetEnv("TELEGRAM_API_HASH", "")
 
-	cfg.Logging.Level = GetEnv("LOG_LEVEL", "info")
-	cfg.Logging.Format = GetEnv("LOG_FORMAT", "text")
+	logLevel, err := strconv.Atoi(GetEnv("LOG_LEVEL", ""))
+	if err != nil {
+		return nil, err
+	}
+	cfg.Telegram.LogLevel = int32(logLevel)
 
 	cfg.Server.Port = GetEnv("SERVER_HTTP_PORT", "8080")
 
@@ -82,11 +86,11 @@ func Load() (*AppConfig, error) {
 	cfg.Kafka.GroupID = "reaction-telegram"
 
 	cfg.Database = Database{
-		Host:     GetEnv("DB_HOST", "localhost"),
-		Port:     GetEnv("DB_PORT", "5432"),
-		User:     GetEnv("DB_USER", "postgres"),
-		Password: GetEnv("DB_PASSWORD", "123456"),
-		DBName:   GetEnv("DB_NAME", "reaction"),
+		Host:     GetEnv("DB_HOST", ""),
+		Port:     GetEnv("DB_PORT", ""),
+		User:     GetEnv("DB_USER", ""),
+		Password: GetEnv("DB_PASSWORD", ""),
+		DBName:   GetEnv("DB_NAME", ""),
 	}
 
 	jwtDuration, err := time.ParseDuration(GetEnv("JWT_TOKEN_DURATION", "24h"))

@@ -1,5 +1,5 @@
-github.com/Arman92/go-tdlib v1.0.0 h1:ioj9TlKXjmVfyc6LwyTb4bje1WhrhCUzlJlmYxow3w8=
-github.com/Arman92/go-tdlib v1.0.0/go.mod h1:gz/NLfLyXSF3LufhmK4a+xcrlIvAUR67zxOWv0JxvsU=
+github.com/AnzhelikaLika20/go-tdlib v0.0.0-20260308132115-0066ed58b82b h1:agm/7+l3iScB+ALnay+xsTqhkkng5bcYGpb31P27wEg=
+github.com/AnzhelikaLika20/go-tdlib v0.0.0-20260308132115-0066ed58b82b/go.mod h1:gz/NLfLyXSF3LufhmK4a+xcrlIvAUR67zxOWv0JxvsU=
 github.com/KyleBanks/depth v1.2.1 h1:5h8fQADFrWtarTdtDudMmGsC7GPbOAu6RVB3ffsVFHc=
 github.com/KyleBanks/depth v1.2.1/go.mod h1:jzSb9d0L43HxTQfT+oSA1EEp2q+ne2uh6XgeJcm8brE=
 github.com/bytedance/gopkg v0.1.3 h1:TPBSwH8RsouGCBcMBktLt1AymVo2TVsBVCY4b6TnZ/M=

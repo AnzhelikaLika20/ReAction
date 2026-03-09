@@ -56,7 +56,7 @@ func NewClientWithHTTPAuth(sessionID string, phoneNumber string, cfg config.Tele
 	}
 
 	authManager.RegisterAuthorizer(sessionID, phoneNumber, client)
-	client.authState = "ready"
+	client.authState = "inited"
 
 	return client, nil
 }

@@ -7,7 +7,6 @@ import (
 	scenarios "ReAction/internal/services"
 	"ReAction/internal/services/auth"
 	"ReAction/internal/web"
-	"log"
 
 	"strings"
 
@@ -25,7 +24,7 @@ func RunHTTPServer(
 	router := gin.Default()
 
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5174", "http://localhost:5173"},
+		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "Access-Control-Allow-Origin"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -47,7 +46,6 @@ func RunHTTPServer(
 	handlers.RegisterHealthRoutes(router)
 	scenarioHandler.RegisterScenarioRoutes(router)
 
-	log.Println("listening on http://localhost:" + cfg.Server.Port)
 	router.Run(":" + cfg.Server.Port)
 }
 
