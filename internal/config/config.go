@@ -26,7 +26,7 @@ type TelegramConfig struct {
 	APIID    int32
 	APIHash  string
 	LogLevel int32
-	TestDc	 bool
+	TestDc   bool
 }
 
 type LoggingConfig struct {
@@ -143,7 +143,7 @@ func GetEnvAsBool(key string, defaultValue bool) bool {
 	if value == "" {
 		return defaultValue
 	}
-	
+
 	value = strings.ToLower(value)
 	return value == "true"
 }
