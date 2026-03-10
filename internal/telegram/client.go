@@ -28,7 +28,7 @@ type Client struct {
 }
 
 func NewClientWithHTTPAuth(sessionID string, phoneNumber string, cfg config.TelegramConfig, authManager *AuthStateManager, chatService *chats.ChatService, kafkaProducer *chat_updates.ChatUpdatesProducer) (*Client, error) {
-	tdlib.SetLogVerbosityLevel(1)
+	tdlib.SetLogVerbosityLevel(int(cfg.LogLevel))
 
 	tdlibClient := tdlib.NewClient(tdlib.Config{
 		APIID:               fmt.Sprintf("%d", cfg.APIID),
@@ -40,7 +40,7 @@ func NewClientWithHTTPAuth(sessionID string, phoneNumber string, cfg config.Tele
 		UseMessageDatabase:  true,
 		UseFileDatabase:     true,
 		UseChatInfoDatabase: true,
-		UseTestDataCenter:   false,
+		UseTestDataCenter:   cfg.TestDc,
 		DatabaseDirectory:   "/app/tdlib-sessions/db/" + sessionID,
 		FileDirectory:       "/app/tdlib-sessions/files/" + sessionID,
 		IgnoreFileNames:     false,
