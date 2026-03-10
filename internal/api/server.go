@@ -6,6 +6,7 @@ import (
 	chat_updates "ReAction/internal/kafka/chat_updates"
 	scenarios "ReAction/internal/services"
 	"ReAction/internal/services/auth"
+	"ReAction/internal/services/chats"
 	"ReAction/internal/web"
 
 	"strings"
@@ -18,6 +19,7 @@ func RunHTTPServer(
 	cfg config.AppConfig,
 	authService *auth.AuthService,
 	scenarioService *scenarios.ScenarioService,
+	chatService *chats.ChatService,
 	kafkaProducer *chat_updates.ChatUpdatesProducer,
 ) {
 	gin.SetMode(gin.ReleaseMode)
@@ -26,7 +28,7 @@ func RunHTTPServer(
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "Access-Control-Allow-Origin"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "Access-Control-Allow-Origin", "X-Session-ID"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 	}))
@@ -41,10 +43,12 @@ func RunHTTPServer(
 		kafkaProducer,
 	)
 	scenarioHandler := handlers.NewScenarioHandler(scenarioService)
+	chatHandler := handlers.NewChatHandler(chatService, authService)
 
 	authHandlers.RegisterAuthRoutes(router)
 	handlers.RegisterHealthRoutes(router)
 	scenarioHandler.RegisterScenarioRoutes(router)
+	chatHandler.RegisterChatRoutes(router)
 
 	router.Run(":" + cfg.Server.Port)
 }

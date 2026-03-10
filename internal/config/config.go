@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -25,6 +26,7 @@ type TelegramConfig struct {
 	APIID    int32
 	APIHash  string
 	LogLevel int32
+	TestDc   bool
 }
 
 type LoggingConfig struct {
@@ -73,6 +75,10 @@ func Load() (*AppConfig, error) {
 		return nil, err
 	}
 	cfg.Telegram.LogLevel = int32(logLevel)
+
+	cfg.Telegram.TestDc = GetEnvAsBool("TEST_DC", false)
+
+	log.Println("TEST_DC=", cfg.Telegram.TestDc)
 
 	cfg.Server.Port = GetEnv("SERVER_HTTP_PORT", "8080")
 
@@ -130,4 +136,14 @@ func GetEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func GetEnvAsBool(key string, defaultValue bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+
+	value = strings.ToLower(value)
+	return value == "true"
 }

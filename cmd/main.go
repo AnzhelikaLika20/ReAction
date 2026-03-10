@@ -8,6 +8,7 @@ import (
 	scenarios "ReAction/internal/services"
 	"ReAction/internal/services/ai"
 	"ReAction/internal/services/auth"
+	"ReAction/internal/services/chats"
 	"ReAction/internal/storage"
 	"ReAction/internal/telegram"
 	"context"
@@ -46,11 +47,13 @@ func main() {
 	userRepo := storage.NewUserRepository(dbStorage.Queries)
 	sessionRepo := storage.NewSessionRepository(dbStorage.Queries)
 	scenarioRepo := storage.NewScenarioRepository(dbStorage.Queries)
+	chatRepo := storage.NewChatRepository(dbStorage.Queries)
 
 	jwtService := auth.NewJWTService(
 		cfg.JWT.SecretKey,
 		cfg.JWT.TokenDuration,
 	)
+	chatService := chats.NewChatService(chatRepo)
 
 	authManager := telegram.NewAuthStateManager()
 
@@ -59,6 +62,7 @@ func main() {
 		userRepo,
 		sessionRepo,
 		authManager,
+		chatService,
 	)
 
 	scenarioService := scenarios.NewScenarioService(scenarioRepo)
@@ -110,7 +114,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		api.RunHTTPServer(*cfg, authService, scenarioService, chatUpdatesProducer)
+		api.RunHTTPServer(*cfg, authService, scenarioService, chatService, chatUpdatesProducer)
 	}()
 
 	sigChan := make(chan os.Signal, 1)

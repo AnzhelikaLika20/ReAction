@@ -1,4 +1,24 @@
 definitions:
+  chats.ChatDTO:
+    properties:
+      id:
+        type: integer
+      is_selected:
+        type: boolean
+      name:
+        type: string
+      type:
+        type: string
+    type: object
+  chats.UpdateChatSelectionRequest:
+    properties:
+      chat_ids:
+        items:
+          type: integer
+        type: array
+    required:
+    - chat_ids
+    type: object
   handlers.CodeRequest:
     description: Запрос для отправки кода подтверждения из Telegram
     properties:
@@ -109,173 +129,6 @@ definitions:
 info:
   contact: {}
 paths:
-  /api/scenarios:
-    get:
-      description: Возвращает список всех сценариев пользователя
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/scenarios.ScenarioResponse'
-            type: array
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-      security:
-      - Bearer: []
-      summary: Получить все сценарии пользователя
-      tags:
-      - scenarios
-    post:
-      consumes:
-      - application/json
-      description: Создает новый сценарий для пользователя
-      parameters:
-      - description: Данные сценария
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/scenarios.CreateScenarioDTO'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/scenarios.ScenarioResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-      security:
-      - Bearer: []
-      summary: Создать новый сценарий
-      tags:
-      - scenarios
-  /api/scenarios/{id}:
-    delete:
-      description: Удаляет сценарий пользователя
-      parameters:
-      - description: ID сценария
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-      security:
-      - Bearer: []
-      summary: Удалить сценарий
-      tags:
-      - scenarios
-    get:
-      description: Возвращает сценарий по ID
-      parameters:
-      - description: ID сценария
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/scenarios.ScenarioResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-      security:
-      - Bearer: []
-      summary: Получить сценарий по ID
-      tags:
-      - scenarios
-    put:
-      consumes:
-      - application/json
-      description: Обновляет существующий сценарий
-      parameters:
-      - description: ID сценария
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Данные для обновления
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/scenarios.UpdateScenarioDTO'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/scenarios.ScenarioResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-      security:
-      - Bearer: []
-      summary: Обновить сценарий
-      tags:
-      - scenarios
   /auth/session/status:
     get:
       description: Возвращает текущий статус сессии
@@ -446,6 +299,97 @@ paths:
       summary: Получить токен авторизации
       tags:
       - auth
+  /chats:
+    get:
+      description: Возвращает список чатов Telegram с информацией о выборе
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/chats.ChatDTO'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Получить список чатов пользователя
+      tags:
+      - chats
+  /chats/selected:
+    get:
+      description: Возвращает список ID выбранных чатов
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                format: int64
+                type: integer
+              type: array
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Получить выбранные чаты
+      tags:
+      - chats
+  /chats/selection:
+    post:
+      consumes:
+      - application/json
+      description: Сохраняет список выбранных чатов для анализа
+      parameters:
+      - description: Список ID чатов
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/chats.UpdateChatSelectionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Обновить выбранные чаты
+      tags:
+      - chats
   /ping:
     get:
       description: endpoint для проверки что сервер работает
@@ -460,6 +404,173 @@ paths:
       summary: Проверка работоспособности API
       tags:
       - health
+  /scenarios:
+    get:
+      description: Возвращает список всех сценариев пользователя
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/scenarios.ScenarioResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Получить все сценарии пользователя
+      tags:
+      - scenarios
+    post:
+      consumes:
+      - application/json
+      description: Создает новый сценарий для пользователя
+      parameters:
+      - description: Данные сценария
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/scenarios.CreateScenarioDTO'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/scenarios.ScenarioResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Создать новый сценарий
+      tags:
+      - scenarios
+  /scenarios/{id}:
+    delete:
+      description: Удаляет сценарий пользователя
+      parameters:
+      - description: ID сценария
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Удалить сценарий
+      tags:
+      - scenarios
+    get:
+      description: Возвращает сценарий по ID
+      parameters:
+      - description: ID сценария
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/scenarios.ScenarioResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Получить сценарий по ID
+      tags:
+      - scenarios
+    put:
+      consumes:
+      - application/json
+      description: Обновляет существующий сценарий
+      parameters:
+      - description: ID сценария
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Данные для обновления
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/scenarios.UpdateScenarioDTO'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/scenarios.ScenarioResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Обновить сценарий
+      tags:
+      - scenarios
 securityDefinitions:
   Bearer:
     in: header

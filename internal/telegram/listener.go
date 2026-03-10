@@ -2,6 +2,7 @@ package telegram
 
 import (
 	chat_updates "ReAction/internal/kafka/chat_updates"
+	"ReAction/internal/services/chats"
 	"context"
 	"log"
 
@@ -13,14 +14,16 @@ type Listener struct {
 	isRunning     bool
 	cancel        context.CancelFunc
 	kafkaProducer *chat_updates.ChatUpdatesProducer
-	sessionID     string
+	phoneNumber   string
+	chatsService  *chats.ChatService
 }
 
-func NewListener(client *tdlib.Client, sessionID string, kafkaProducer *chat_updates.ChatUpdatesProducer) *Listener {
+func NewListener(client *tdlib.Client, phoneNumber string, chatsService *chats.ChatService, kafkaProducer *chat_updates.ChatUpdatesProducer) *Listener {
 	return &Listener{
 		client:        client,
 		kafkaProducer: kafkaProducer,
-		sessionID:     sessionID,
+		phoneNumber:   phoneNumber,
+		chatsService:  chatsService,
 	}
 }
 
@@ -66,11 +69,16 @@ func (l *Listener) Start(ctx context.Context) {
 		eventFilter := func(msg *tdlib.TdMessage) bool {
 			updateMsg := (*msg).(*tdlib.UpdateNewMessage)
 
-			if updateMsg.Message.ChatID == 8562399145 {
-				return true
+			isAllowed, err := l.chatsService.IsChatAllowed(ctx, l.phoneNumber, updateMsg.Message.ChatID)
+			if err != nil {
+				log.Println(err)
+				return false
 			}
+			// if updateMsg.Message.ChatID == 8562399145 {
+			// 	return true
+			// }
 
-			return false
+			return isAllowed
 		}
 
 		receiver := l.client.AddEventReceiver(&tdlib.UpdateNewMessage{}, eventFilter, 15)
@@ -116,19 +124,19 @@ func (l *Listener) sendToKafka(message *Message, eventType string) {
 	}
 
 	messageEvent := chat_updates.ChatUpdateMessageEvent{
-		SessionID:  l.sessionID,
-		EventType:  eventType,
-		MessageID:  message.ID,
-		ChatID:     message.ChatID,
-		ChatTitle:  message.ChatTitle,
-		ChatType:   message.ChatType,
-		Text:       message.Text,
-		SenderID:   message.SenderID,
-		IsOutgoing: message.IsOutgoing,
-		Timestamp:  message.Timestamp,
+		PhoneNumber: l.phoneNumber,
+		EventType:   eventType,
+		MessageID:   message.ID,
+		ChatID:      message.ChatID,
+		ChatTitle:   message.ChatTitle,
+		ChatType:    message.ChatType,
+		Text:        message.Text,
+		SenderID:    message.SenderID,
+		IsOutgoing:  message.IsOutgoing,
+		Timestamp:   message.Timestamp,
 	}
 
-	err := l.kafkaProducer.SendTelegramMessage(l.sessionID, messageEvent)
+	err := l.kafkaProducer.SendTelegramMessage(messageEvent)
 	if err != nil {
 		log.Printf("[KAFKA] Failed to send message event to Kafka: %v", err)
 	}

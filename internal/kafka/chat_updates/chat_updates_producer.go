@@ -96,7 +96,7 @@ func (p *ChatUpdatesProducer) SendMessage(topic string, key int64, value interfa
 	return writer.WriteMessages(ctx, msg)
 }
 
-func (p *ChatUpdatesProducer) SendTelegramMessage(sessionID string, message ChatUpdateMessageEvent) error {
+func (p *ChatUpdatesProducer) SendTelegramMessage(message ChatUpdateMessageEvent) error {
 	return p.SendMessage(p.config.ChatUpdatesTopic, message.ChatID, message)
 }
 

@@ -29,7 +29,7 @@ func NewScenarioHandler(scenarioService *scenarios.ScenarioService) *ScenarioHan
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /api/scenarios [post]
+// @Router /scenarios [post]
 func (h *ScenarioHandler) CreateScenario(c *gin.Context) {
 	phoneNumber, exists := c.Get("phone_number")
 	if !exists {
@@ -60,7 +60,7 @@ func (h *ScenarioHandler) CreateScenario(c *gin.Context) {
 // @Success 200 {array} scenarios.ScenarioResponse
 // @Failure 401 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /api/scenarios [get]
+// @Router /scenarios [get]
 func (h *ScenarioHandler) GetUserScenarios(c *gin.Context) {
 	phoneNumber, exists := c.Get("phone_number")
 	if !exists {
@@ -87,7 +87,7 @@ func (h *ScenarioHandler) GetUserScenarios(c *gin.Context) {
 // @Failure 401 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /api/scenarios/{id} [get]
+// @Router /scenarios/{id} [get]
 func (h *ScenarioHandler) GetScenarioByID(c *gin.Context) {
 	phoneNumber, exists := c.Get("phone_number")
 	if !exists {
@@ -123,7 +123,7 @@ func (h *ScenarioHandler) GetScenarioByID(c *gin.Context) {
 // @Failure 401 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /api/scenarios/{id} [put]
+// @Router /scenarios/{id} [put]
 func (h *ScenarioHandler) UpdateScenario(c *gin.Context) {
 	phoneNumber, exists := c.Get("phone_number")
 	if !exists {
@@ -166,7 +166,7 @@ func (h *ScenarioHandler) UpdateScenario(c *gin.Context) {
 // @Failure 401 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /api/scenarios/{id} [delete]
+// @Router /scenarios/{id} [delete]
 func (h *ScenarioHandler) DeleteScenario(c *gin.Context) {
 	phoneNumber, exists := c.Get("phone_number")
 	if !exists {

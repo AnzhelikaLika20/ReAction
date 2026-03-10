@@ -13,7 +13,7 @@ const createUser = `-- name: CreateUser :one
 INSERT INTO users (
     phone_number
 ) VALUES ($1)
-RETURNING phone_number, is_active, created_at, updated_at
+RETURNING phone_number, is_active, created_at, updated_at, chats
 `
 
 func (q *Queries) CreateUser(ctx context.Context, phoneNumber string) (User, error) {
@@ -24,6 +24,7 @@ func (q *Queries) CreateUser(ctx context.Context, phoneNumber string) (User, err
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Chats,
 	)
 	return i, err
 }
@@ -39,7 +40,7 @@ func (q *Queries) DeleteUser(ctx context.Context, phoneNumber string) error {
 }
 
 const getUserByPhone = `-- name: GetUserByPhone :one
-SELECT phone_number, is_active, created_at, updated_at FROM users 
+SELECT phone_number, is_active, created_at, updated_at, chats FROM users 
 WHERE phone_number = $1
 `
 
@@ -51,6 +52,7 @@ func (q *Queries) GetUserByPhone(ctx context.Context, phoneNumber string) (User,
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Chats,
 	)
 	return i, err
 }
