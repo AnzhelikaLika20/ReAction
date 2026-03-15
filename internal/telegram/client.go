@@ -6,7 +6,6 @@ import (
 	"ReAction/internal/services/chats"
 	"context"
 	"fmt"
-	"log"
 	"math"
 	"sync"
 	"time"
