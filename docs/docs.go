@@ -285,6 +285,37 @@ const docTemplate = `{
                 }
             }
         },
+        "/calendar/url": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Возвращает URL с base64 телефона и подписью для проверки. Требуется Bearer.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "calendar"
+                ],
+                "summary": "Получить URL подписки на календарь",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.CalendarURLResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/chats": {
             "get": {
                 "security": [
@@ -711,6 +742,51 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/webcal/{phoneBase64}/{signature}/calendar.ics": {
+            "get": {
+                "description": "Путь: base64(телефон) и HMAC-подпись для проверки.",
+                "produces": [
+                    "text/calendar"
+                ],
+                "tags": [
+                    "calendar"
+                ],
+                "summary": "ICS фид календаря по подписанной ссылке",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Телефон в base64",
+                        "name": "phoneBase64",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "HMAC-подпись от телефона",
+                        "name": "signature",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "iCalendar feed",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Неверная подпись",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -742,6 +818,14 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                }
+            }
+        },
+        "handlers.CalendarURLResponse": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string"
                 }
             }
         },

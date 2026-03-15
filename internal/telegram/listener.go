@@ -74,9 +74,6 @@ func (l *Listener) Start(ctx context.Context) {
 				log.Println(err)
 				return false
 			}
-			// if updateMsg.Message.ChatID == 8562399145 {
-			// 	return true
-			// }
 
 			return isAllowed
 		}

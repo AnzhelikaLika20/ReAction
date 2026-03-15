@@ -19,6 +19,11 @@ definitions:
     required:
     - chat_ids
     type: object
+  handlers.CalendarURLResponse:
+    properties:
+      url:
+        type: string
+    type: object
   handlers.CodeRequest:
     description: Запрос для отправки кода подтверждения из Telegram
     properties:
@@ -299,6 +304,26 @@ paths:
       summary: Получить токен авторизации
       tags:
       - auth
+  /calendar/url:
+    get:
+      description: Возвращает URL с base64 телефона и подписью для проверки. Требуется
+        Bearer.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.CalendarURLResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Получить URL подписки на календарь
+      tags:
+      - calendar
   /chats:
     get:
       description: Возвращает список чатов Telegram с информацией о выборе
@@ -571,6 +596,36 @@ paths:
       summary: Обновить сценарий
       tags:
       - scenarios
+  /webcal/{phoneBase64}/{signature}/calendar.ics:
+    get:
+      description: 'Путь: base64(телефон) и HMAC-подпись для проверки.'
+      parameters:
+      - description: Телефон в base64
+        in: path
+        name: phoneBase64
+        required: true
+        type: string
+      - description: HMAC-подпись от телефона
+        in: path
+        name: signature
+        required: true
+        type: string
+      produces:
+      - text/calendar
+      responses:
+        "200":
+          description: iCalendar feed
+          schema:
+            type: string
+        "400":
+          description: Неверная подпись
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: ICS фид календаря по подписанной ссылке
+      tags:
+      - calendar
 securityDefinitions:
   Bearer:
     in: header
