@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"github.com/arran4/golang-ical"
 	"strings"
 	"time"
 )
@@ -44,40 +45,29 @@ func (s *Service) signature(phone string) string {
 }
 
 func (s *Service) GetCalendarICS(sessionID string) string {
+	cal := ics.NewCalendar()
+	cal.SetMethod(ics.MethodPublish)
+	cal.SetCalscale("GREGORIAN")
+	cal.SetXWRCalName("ReAction Тестовый календарь")
+	cal.SetXWRTimezone("UTC")
+	cal.SetRefreshInterval("PT30S")
+
+	cal.SetXPublishedTTL("PT30S")
+
 	now := time.Now().UTC()
-	eventStart := now.Add(15 * time.Minute)
-	eventEnd := eventStart.Add(5 * time.Minute)
-	dtFormat := "20060102T150405Z"
+	event := cal.AddEvent(fmt.Sprintf("%s@reaction-test", now.Format("20060102T150405")))
+	event.SetCreatedTime(now)
+	event.SetDtStampTime(now)
+	event.SetStartAt(now.Add(15 * time.Minute))
+	event.SetEndAt(now.Add(20 * time.Minute))
+	event.SetSummary("Тестовое событие для подписки")
+	event.SetDescription("Это тестовое событие")
+	event.SetLocation("Онлайн")
 
-	events := fmt.Sprintf(`BEGIN:VEVENT
-		UID:%s@reaction-test
-		DTSTAMP:%s
-		DTSTART:%s
-		DTEND:%s
-		SUMMARY:Тестовое событие для подписки
-		DESCRIPTION:Это тестовое событие
-		LOCATION:Онлайн
-		BEGIN:VALARM
-		TRIGGER:-PT30M
-		ACTION:DISPLAY
-		DESCRIPTION:Напоминание о тестовом событии
-		END:VALARM
-		END:VEVENT`,
-		now.Format("20060102T150405"),
-		now.Format(dtFormat),
-		eventStart.Format(dtFormat),
-		eventEnd.Format(dtFormat),
-	)
+	alarm := event.AddAlarm()
+	alarm.SetTrigger("-PT30M")
+	alarm.SetAction(ics.ActionDisplay)
+	alarm.SetDescription("Напоминание о тестовом событии")
 
-	return fmt.Sprintf(`BEGIN:VCALENDAR
-		VERSION:2.0
-		PRODID:-//ReAction//Test Calendar//EN
-		CALSCALE:GREGORIAN
-		METHOD:PUBLISH
-		X-WR-CALNAME:ReAction Тестовый календарь
-		X-WR-TIMEZONE:UTC
-		REFRESH-INTERVAL;VALUE=DURATION:PT30S
-		X-PUBLISHED-TTL:PT30S
-		%s
-		END:VCALENDAR`, events)
+	return cal.Serialize()
 }
