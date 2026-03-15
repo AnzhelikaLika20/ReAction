@@ -81,19 +81,17 @@ func getChatList(client *tdlib.Client, limit int) ([]*tdlib.Chat, error) {
 	var haveFullChatList bool
 
 	for !haveFullChatList && limit > len(allChats) {
-		log.Println("keke 1")
 		offsetOrder := int64(math.MaxInt64)
 		offsetChatID := int64(0)
 		var chatList = tdlib.NewChatListMain()
 		var lastChat *tdlib.Chat
 
+		requestedCount := limit - len(allChats)
+
 		if len(allChats) > 0 {
-			log.Println("keke 2")
 			lastChat = allChats[len(allChats)-1]
 			for i := 0; i < len(lastChat.Positions); i++ {
-				log.Println("keke 3")
 				if lastChat.Positions[i].List.GetChatListEnum() == tdlib.ChatListMainType {
-					log.Println("keke 4")
 					offsetOrder = int64(lastChat.Positions[i].Order)
 				}
 			}
@@ -101,20 +99,19 @@ func getChatList(client *tdlib.Client, limit int) ([]*tdlib.Chat, error) {
 		}
 
 		chats, err := client.GetChats(chatList, tdlib.JSONInt64(offsetOrder),
-			offsetChatID, int32(limit-len(allChats)))
-		log.Println("Length ")
-		log.Println(len(chats.ChatIDs))
+			offsetChatID, int32(requestedCount))
 		if err != nil {
 			return nil, err
 		}
 		if len(chats.ChatIDs) == 0 {
-			log.Println("keke 5")
 			haveFullChatList = true
 			break
 		}
+		if len(chats.ChatIDs) < requestedCount {
+			haveFullChatList = true
+		}
 
 		for _, chatID := range chats.ChatIDs {
-			log.Println("keke 6")
 			chat, err := client.GetChat(chatID)
 			if err == nil {
 				allChats = append(allChats, chat)
@@ -122,9 +119,7 @@ func getChatList(client *tdlib.Client, limit int) ([]*tdlib.Chat, error) {
 				return nil, err
 			}
 		}
-		log.Println("keke 8")
 	}
 
-	log.Println("keke 9")
 	return allChats, nil
 }

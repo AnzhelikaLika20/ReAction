@@ -149,8 +149,6 @@ func (s *AuthService) GetUserChats(ctx context.Context, sessionID string) ([]*td
 		return nil, fmt.Errorf("Error while getting user chats: %w", err)
 	}
 
-	log.Println(len(chats))
-
 	return chats, nil
 }
 

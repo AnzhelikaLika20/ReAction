@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"log"
 	"net/http"
 
 	"ReAction/internal/services/auth"
@@ -39,7 +38,6 @@ func (h *ChatHandler) GetUserChats(c *gin.Context) {
 	}
 
 	chatsList, err := h.authService.GetUserChats(c.Request.Context(), sessionId.(string))
-	log.Println(len(chatsList))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
@@ -57,7 +55,6 @@ func (h *ChatHandler) GetUserChats(c *gin.Context) {
 
 		dtos = append(dtos, dto)
 	}
-	log.Println("KEKE")
 
 	c.JSON(http.StatusOK, dtos)
 }
