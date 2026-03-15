@@ -142,7 +142,6 @@ func (s *AIService) BatchCheckMessages(
 
 	wg.Wait()
 
-	// Проверяем, были ли ошибки
 	for _, err := range errors {
 		if err != nil {
 			return nil, fmt.Errorf("batch check completed with errors")
@@ -223,7 +222,7 @@ func (s *AIService) makeAPIRequest(
 	for attempt := 0; attempt <= 3; attempt++ {
 		if attempt > 0 {
 			log.Println("Retrying API request", "attempt", attempt)
-			time.Sleep(time.Duration(attempt*500) * time.Millisecond) // Exponential backoff
+			time.Sleep(time.Duration(attempt*500) * time.Millisecond)
 		}
 
 		req, err := http.NewRequestWithContext(ctx, "POST", yandexGPTAPIURL, bytes.NewBuffer(jsonBody))
@@ -256,7 +255,6 @@ func (s *AIService) makeAPIRequest(
 			body, _ := io.ReadAll(resp.Body)
 			lastErr = fmt.Errorf("API error: %s, body: %s", resp.Status, string(body))
 
-			// Не повторяем при клиентских ошибках 4xx
 			if resp.StatusCode >= 400 && resp.StatusCode < 500 {
 				break
 			}
@@ -276,7 +274,6 @@ func (s *AIService) makeAPIRequest(
 			continue
 		}
 
-		// Парсинг JSON ответа от модели
 		resultText := apiResp.Result.Alternatives[0].Message.Text
 		return s.parseModelResponse(resultText)
 	}
@@ -285,7 +282,6 @@ func (s *AIService) makeAPIRequest(
 }
 
 func (s *AIService) parseModelResponse(responseText string) (*CheckResult, error) {
-	// Очистка ответа от возможных markdown или лишних символов
 	cleanText := strings.TrimSpace(responseText)
 	cleanText = strings.TrimPrefix(cleanText, "```json")
 	cleanText = strings.TrimPrefix(cleanText, "```")
@@ -297,7 +293,6 @@ func (s *AIService) parseModelResponse(responseText string) (*CheckResult, error
 		log.Println("Failed to parse model response",
 			"response", cleanText, "error", err)
 
-		// Fallback: эвристический анализ
 		return &CheckResult{
 			Detected:    false,
 			Confidence:  0.0,

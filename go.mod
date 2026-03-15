@@ -67,6 +67,7 @@ require (
 )
 
 require (
+	github.com/arran4/golang-ical v0.3.4
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/uuid v1.6.0

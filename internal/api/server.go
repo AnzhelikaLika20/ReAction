@@ -7,6 +7,7 @@ import (
 	scenarios "ReAction/internal/services"
 	"ReAction/internal/services/auth"
 	"ReAction/internal/services/chats"
+	"ReAction/internal/services/reminders"
 	"ReAction/internal/web"
 
 	"strings"
@@ -20,6 +21,7 @@ func RunHTTPServer(
 	authService *auth.AuthService,
 	scenarioService *scenarios.ScenarioService,
 	chatService *chats.ChatService,
+	remindersService *reminders.Service,
 	kafkaProducer *chat_updates.ChatUpdatesProducer,
 ) {
 	gin.SetMode(gin.ReleaseMode)
@@ -47,6 +49,7 @@ func RunHTTPServer(
 
 	authHandlers.RegisterAuthRoutes(router)
 	handlers.RegisterHealthRoutes(router)
+	handlers.RegisterCalendarRoutes(router, cfg.Server, remindersService)
 	scenarioHandler.RegisterScenarioRoutes(router)
 	chatHandler.RegisterChatRoutes(router)
 
@@ -91,6 +94,7 @@ func isPublicRoute(path string) bool {
 	publicRoutes := []string{
 		"/auth/token",
 		"/ping",
+		"/webcal/",
 		"/swagger/",
 		"/docs/",
 		"/favicon.ico",

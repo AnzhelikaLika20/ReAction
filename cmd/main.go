@@ -9,6 +9,7 @@ import (
 	"ReAction/internal/services/ai"
 	"ReAction/internal/services/auth"
 	"ReAction/internal/services/chats"
+	"ReAction/internal/services/reminders"
 	"ReAction/internal/storage"
 	"ReAction/internal/telegram"
 	"context"
@@ -66,6 +67,7 @@ func main() {
 	)
 
 	scenarioService := scenarios.NewScenarioService(scenarioRepo)
+	remindersService := reminders.NewRemindersService(cfg.JWT.SecretKey)
 
 	userActionsProducer, err := user_actions.NewUserActionProducer(cfg.Kafka)
 	if err != nil {
@@ -114,7 +116,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		api.RunHTTPServer(*cfg, authService, scenarioService, chatService, chatUpdatesProducer)
+		api.RunHTTPServer(*cfg, authService, scenarioService, chatService, remindersService, chatUpdatesProducer)
 	}()
 
 	sigChan := make(chan os.Signal, 1)

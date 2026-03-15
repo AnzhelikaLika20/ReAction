@@ -19,7 +19,8 @@ type AppConfig struct {
 }
 
 type ServerConfig struct {
-	Port string
+	Port    string
+	BaseURL string
 }
 
 type TelegramConfig struct {
@@ -81,6 +82,7 @@ func Load() (*AppConfig, error) {
 	log.Println("TEST_DC=", cfg.Telegram.TestDc)
 
 	cfg.Server.Port = GetEnv("SERVER_HTTP_PORT", "8080")
+	cfg.Server.BaseURL = GetEnv("SERVER_BASE_URL", "https://api.re-action.site")
 
 	cfg.Kafka.Broker = GetEnv("KAFKA_BROKER", "kafka:9092")
 	if topic := os.Getenv("KAFKA_USER_ACTIONS_TOPIC"); topic != "" {
