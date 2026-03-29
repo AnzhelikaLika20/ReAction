@@ -1,21 +1,21 @@
 -- name: CreateScenario :one
 INSERT INTO scenarios (
-    phone_number,
+    user_id,
     title,
     description,
     conditions,
     params,
     is_active
 ) VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING *;
+RETURNING id, user_id, title, description, conditions, params, is_active, created_at, updated_at;
 
 -- name: GetScenarioByID :one
-SELECT * FROM scenarios 
-WHERE id = $1 AND phone_number = $2;
+SELECT id, user_id, title, description, conditions, params, is_active, created_at, updated_at FROM scenarios 
+WHERE id = $1 AND user_id = $2;
 
 -- name: GetUserScenarios :many
-SELECT * FROM scenarios 
-WHERE phone_number = $1
+SELECT id, user_id, title, description, conditions, params, is_active, created_at, updated_at FROM scenarios 
+WHERE user_id = $1
 ORDER BY created_at DESC;
 
 -- name: UpdateScenario :one
@@ -27,9 +27,9 @@ SET
     params = COALESCE($6, params),
     is_active = COALESCE($7, is_active),
     updated_at = NOW()
-WHERE id = $1 AND phone_number = $2
-RETURNING *;
+WHERE id = $1 AND user_id = $2
+RETURNING id, user_id, title, description, conditions, params, is_active, created_at, updated_at;
 
 -- name: DeleteScenario :exec
 DELETE FROM scenarios 
-WHERE id = $1 AND phone_number = $2;
+WHERE id = $1 AND user_id = $2;

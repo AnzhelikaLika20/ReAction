@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -13,7 +14,13 @@ import (
 	"ReAction/internal/telegram"
 
 	"github.com/Arman92/go-tdlib"
+	"github.com/jackc/pgx/v5/pgconn"
+	"golang.org/x/crypto/bcrypt"
 )
+
+var ErrInvalidCredentials = errors.New("invalid email or password")
+var ErrEmailTaken = errors.New("email already registered")
+var ErrTelegramNotConnected = errors.New("telegram client not initialized; connect Telegram first")
 
 type AuthService struct {
 	jwtService  *JWTService
@@ -39,13 +46,54 @@ func NewAuthService(
 	}
 }
 
-func (s *AuthService) GenerateToken(ctx context.Context, phoneNumber string) (string, error) {
-	token, err := s.jwtService.GenerateToken(phoneNumber)
+func (s *AuthService) issueToken(ctx context.Context, u *storage.User) (string, error) {
+	if !u.IsActive {
+		return "", errors.New("user is inactive")
+	}
+	_ = s.userRepo.UpdateLastAuth(ctx, u.ID)
+	return s.jwtService.GenerateToken(u.ID, u.Email, u.PhoneNumber)
+}
+
+func (s *AuthService) Register(ctx context.Context, email, password string) (string, error) {
+	existing, _, err := s.userRepo.GetUserByEmail(ctx, email)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate token: %w", err)
+		return "", err
+	}
+	if existing != nil {
+		return "", ErrEmailTaken
 	}
 
-	return token, nil
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", fmt.Errorf("hash password: %w", err)
+	}
+
+	u, err := s.userRepo.CreateUserWithCredentials(ctx, email, string(hash))
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return "", ErrEmailTaken
+		}
+		return "", err
+	}
+
+	return s.issueToken(ctx, u)
+}
+
+func (s *AuthService) Login(ctx context.Context, email, password string) (string, error) {
+	u, hash, err := s.userRepo.GetUserByEmail(ctx, email)
+	if err != nil {
+		return "", err
+	}
+	if u == nil || hash == "" {
+		return "", ErrInvalidCredentials
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
+		return "", ErrInvalidCredentials
+	}
+
+	return s.issueToken(ctx, u)
 }
 
 func (s *AuthService) ValidateToken(ctx context.Context, token string) (*Claims, error) {
@@ -57,12 +105,8 @@ func (s *AuthService) ValidateToken(ctx context.Context, token string) (*Claims,
 	return claims, nil
 }
 
-func (s *AuthService) GetSessionStatus(ctx context.Context, token string) (string, error) {
-	session, err := s.sessionRepo.GetSession(ctx, token)
-	if err != nil {
-		return "", err
-	}
-	return session.Status, nil
+func (s *AuthService) DeleteSession(ctx context.Context, sessionID string) error {
+	return s.sessionRepo.DeleteSession(ctx, sessionID)
 }
 
 func (s *AuthService) SetPhoneNumber(ctx context.Context, sessionID, phoneNumber string) (string, error) {
@@ -74,9 +118,8 @@ func (s *AuthService) SetPhoneNumber(ctx context.Context, sessionID, phoneNumber
 	return string(state.GetAuthorizationStateEnum()), nil
 }
 
-func (s *AuthService) SetCode(ctx context.Context, sessionID, code string, phoneNumber string) (string, error) {
+func (s *AuthService) SetCode(ctx context.Context, sessionID, code string) (string, error) {
 	state, err := s.authManager.SetCode(sessionID, code)
-
 	if err != nil {
 		return "", err
 	}
@@ -84,9 +127,8 @@ func (s *AuthService) SetCode(ctx context.Context, sessionID, code string, phone
 	return string(state.GetAuthorizationStateEnum()), nil
 }
 
-func (s *AuthService) SetPassword(ctx context.Context, sessionID, password string, phoneNumber string) (string, error) {
+func (s *AuthService) SetPassword(ctx context.Context, sessionID, password string) (string, error) {
 	state, err := s.authManager.SetPassword(sessionID, password)
-
 	if err != nil {
 		return "", err
 	}
@@ -94,9 +136,9 @@ func (s *AuthService) SetPassword(ctx context.Context, sessionID, password strin
 	return string(state.GetAuthorizationStateEnum()), nil
 }
 
-func (s *AuthService) CreateTdlibClient(ctx context.Context, sessionID string, phoneNumber string, cfg config.TelegramConfig, producer *chat_updates.ChatUpdatesProducer) {
+func (s *AuthService) CreateTdlibClient(ctx context.Context, sessionID, appUserID string, cfg config.TelegramConfig, producer *chat_updates.ChatUpdatesProducer) {
 	go func() {
-		client, err := telegram.NewClientWithHTTPAuth(sessionID, phoneNumber, cfg, s.authManager, s.chatService, producer)
+		client, err := telegram.NewClientWithHTTPAuth(sessionID, appUserID, cfg, s.authManager, s.chatService, producer)
 		if err != nil {
 			log.Printf("[TELEGRAM] ERROR: Failed to create Telegram client for session %s: %v", sessionID, err)
 			return
@@ -110,16 +152,13 @@ func (s *AuthService) CreateTdlibClient(ctx context.Context, sessionID string, p
 			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
 
-			existingUser, err := s.userRepo.GetUserByPhone(ctx, phoneNumber)
-			if err != nil {
-				log.Printf("[AUTH] ERROR checking user existence: %v", err)
-			}
-			if existingUser == nil {
-				log.Printf("[AUTH] Creating user in database for: %s", phoneNumber)
-				if _, err := s.userRepo.CreateUser(ctx, phoneNumber); err != nil {
-					log.Printf("[AUTH] ERROR creating user: %v", err)
+			tgPhone := client.TelegramPhoneNumber()
+			if tgPhone != "" {
+				if err := s.userRepo.UpdateTelegramPhone(ctx, appUserID, tgPhone); err != nil {
+					log.Printf("[AUTH] ERROR updating telegram phone: %v", err)
 				}
 			}
+
 			existingSession, err := s.sessionRepo.GetSession(ctx, sessionID)
 			if err != nil {
 				log.Printf("[AUTH] ERROR checking session existence: %v", err)
@@ -127,7 +166,7 @@ func (s *AuthService) CreateTdlibClient(ctx context.Context, sessionID string, p
 
 			if existingSession == nil {
 				log.Printf("[AUTH] Creating session in database: %s", sessionID)
-				if err := s.sessionRepo.CreateSession(ctx, sessionID, phoneNumber); err != nil {
+				if err := s.sessionRepo.CreateSession(ctx, sessionID, appUserID); err != nil {
 					log.Printf("[AUTH] ERROR creating session: %v", err)
 				}
 			}
@@ -143,10 +182,13 @@ func (s *AuthService) CreateTdlibClient(ctx context.Context, sessionID string, p
 
 func (s *AuthService) GetUserChats(ctx context.Context, sessionID string) ([]*tdlib.Chat, error) {
 	client := s.authManager.GetClientBySessionId(sessionID)
+	if client == nil {
+		return nil, ErrTelegramNotConnected
+	}
 
 	chats, err := client.GetUserChats()
 	if err != nil {
-		return nil, fmt.Errorf("Error while getting user chats: %w", err)
+		return nil, fmt.Errorf("error while getting user chats: %w", err)
 	}
 
 	log.Println(len(chats))
@@ -162,4 +204,8 @@ func (s *AuthService) GetAuthState(ctx context.Context, sessionID string) string
 
 func (s *AuthService) GetTokenDuration() time.Duration {
 	return s.jwtService.GetTokenDuration()
+}
+
+func (s *AuthService) GetUserByID(ctx context.Context, id string) (*storage.User, error) {
+	return s.userRepo.GetUserByID(ctx, id)
 }

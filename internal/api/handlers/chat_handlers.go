@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"log"
+	"errors"
 	"net/http"
 
 	"ReAction/internal/services/auth"
@@ -41,7 +42,11 @@ func (h *ChatHandler) GetUserChats(c *gin.Context) {
 	chatsList, err := h.authService.GetUserChats(c.Request.Context(), sessionId.(string))
 	log.Println(len(chatsList))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		status := http.StatusInternalServerError
+		if errors.Is(err, auth.ErrTelegramNotConnected) {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, ErrorResponse{Error: err.Error()})
 		return
 	}
 
@@ -75,7 +80,7 @@ func (h *ChatHandler) GetUserChats(c *gin.Context) {
 // @Failure 500 {object} ErrorResponse
 // @Router /chats/selection [post]
 func (h *ChatHandler) UpdateChatSelection(c *gin.Context) {
-	phoneNumber, exists := c.Get("phone_number")
+	userID, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Не авторизован"})
 		return
@@ -87,7 +92,7 @@ func (h *ChatHandler) UpdateChatSelection(c *gin.Context) {
 		return
 	}
 
-	if err := h.chatService.UpdateSelectedChats(c.Request.Context(), phoneNumber.(string), req.ChatIDs); err != nil {
+	if err := h.chatService.UpdateSelectedChats(c.Request.Context(), userID.(string), req.ChatIDs); err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
@@ -105,13 +110,13 @@ func (h *ChatHandler) UpdateChatSelection(c *gin.Context) {
 // @Failure 500 {object} ErrorResponse
 // @Router /chats/selected [get]
 func (h *ChatHandler) GetSelectedChats(c *gin.Context) {
-	phoneNumber, exists := c.Get("phone_number")
+	userID, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Не авторизован"})
 		return
 	}
 
-	selectedChats, err := h.chatService.GetSelectedChats(c.Request.Context(), phoneNumber.(string))
+	selectedChats, err := h.chatService.GetSelectedChats(c.Request.Context(), userID.(string))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return

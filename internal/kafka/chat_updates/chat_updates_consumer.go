@@ -27,6 +27,7 @@ type ChatUpdatesConsumer struct {
 }
 
 type ConversationMessage struct {
+	UserID          string    `json:"user_id,omitempty"`
 	SessionID       string    `json:"session_id"`
 	EventType       string    `json:"event_type"`
 	MessageID       int64     `json:"message_id"`

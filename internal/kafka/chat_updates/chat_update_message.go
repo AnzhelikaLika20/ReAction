@@ -1,6 +1,7 @@
 package chat_updates
 
 type ChatUpdateMessageEvent struct {
+	UserID      string `json:"user_id,omitempty"`
 	PhoneNumber string `json:"session_id"`
 	EventType   string `json:"event_type"` // "message_new", "message_sent", "message_edited"
 	MessageID   int64  `json:"message_id"`

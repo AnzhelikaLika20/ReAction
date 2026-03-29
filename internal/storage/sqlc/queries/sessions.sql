@@ -1,17 +1,17 @@
 -- name: CreateSession :one
 INSERT INTO sessions (
     token_hash,
-    phone_number
+    user_id
 ) VALUES ($1, $2)
-RETURNING *;
+RETURNING token_hash, user_id, created_at;
 
 -- name: GetSession :one
-SELECT * FROM sessions 
+SELECT token_hash, user_id, created_at FROM sessions 
 WHERE token_hash = $1;
 
--- name: GetSessionByPhone :one
-SELECT * FROM sessions 
-WHERE phone_number = $1 
+-- name: GetSessionByUserID :one
+SELECT token_hash, user_id, created_at FROM sessions 
+WHERE user_id = $1 
 ORDER BY created_at DESC 
 LIMIT 1;
 
@@ -21,4 +21,4 @@ WHERE token_hash = $1;
 
 -- name: DeleteUserSessions :exec
 DELETE FROM sessions 
-WHERE phone_number = $1;
+WHERE user_id = $1;

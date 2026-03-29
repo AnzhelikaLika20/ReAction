@@ -10,7 +10,6 @@ import (
 
 type Scenario struct {
 	ID          pgtype.UUID
-	PhoneNumber string
 	Title       string
 	Description pgtype.Text
 	Conditions  []byte
@@ -18,18 +17,22 @@ type Scenario struct {
 	IsActive    pgtype.Bool
 	CreatedAt   pgtype.Timestamp
 	UpdatedAt   pgtype.Timestamp
+	UserID      pgtype.UUID
 }
 
 type Session struct {
-	TokenHash   string
-	PhoneNumber string
-	CreatedAt   pgtype.Timestamptz
+	TokenHash string
+	CreatedAt pgtype.Timestamptz
+	UserID    pgtype.UUID
 }
 
 type User struct {
-	PhoneNumber string
-	IsActive    pgtype.Bool
-	CreatedAt   pgtype.Timestamptz
-	UpdatedAt   pgtype.Timestamptz
-	Chats       []int64
+	PhoneNumber  pgtype.Text
+	IsActive     pgtype.Bool
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	Chats        []int64
+	ID           pgtype.UUID
+	Email        pgtype.Text
+	PasswordHash pgtype.Text
 }

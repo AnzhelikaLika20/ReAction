@@ -7,22 +7,24 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const addChatToUser = `-- name: AddChatToUser :exec
 UPDATE users 
 SET chats = array_append(chats, $2),
     updated_at = NOW()
-WHERE phone_number = $1
+WHERE id = $1
 `
 
 type AddChatToUserParams struct {
-	PhoneNumber string
+	ID          pgtype.UUID
 	ArrayAppend interface{}
 }
 
 func (q *Queries) AddChatToUser(ctx context.Context, arg AddChatToUserParams) error {
-	_, err := q.db.Exec(ctx, addChatToUser, arg.PhoneNumber, arg.ArrayAppend)
+	_, err := q.db.Exec(ctx, addChatToUser, arg.ID, arg.ArrayAppend)
 	return err
 }
 
@@ -30,20 +32,20 @@ const clearUserChats = `-- name: ClearUserChats :exec
 UPDATE users 
 SET chats = '{}',
     updated_at = NOW()
-WHERE phone_number = $1
+WHERE id = $1
 `
 
-func (q *Queries) ClearUserChats(ctx context.Context, phoneNumber string) error {
-	_, err := q.db.Exec(ctx, clearUserChats, phoneNumber)
+func (q *Queries) ClearUserChats(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, clearUserChats, id)
 	return err
 }
 
 const getUserChats = `-- name: GetUserChats :one
-SELECT chats FROM users WHERE phone_number = $1
+SELECT chats FROM users WHERE id = $1
 `
 
-func (q *Queries) GetUserChats(ctx context.Context, phoneNumber string) ([]int64, error) {
-	row := q.db.QueryRow(ctx, getUserChats, phoneNumber)
+func (q *Queries) GetUserChats(ctx context.Context, id pgtype.UUID) ([]int64, error) {
+	row := q.db.QueryRow(ctx, getUserChats, id)
 	var chats []int64
 	err := row.Scan(&chats)
 	return chats, err
@@ -53,16 +55,16 @@ const removeChatFromUser = `-- name: RemoveChatFromUser :exec
 UPDATE users 
 SET chats = array_remove(chats, $2),
     updated_at = NOW()
-WHERE phone_number = $1
+WHERE id = $1
 `
 
 type RemoveChatFromUserParams struct {
-	PhoneNumber string
+	ID          pgtype.UUID
 	ArrayRemove interface{}
 }
 
 func (q *Queries) RemoveChatFromUser(ctx context.Context, arg RemoveChatFromUserParams) error {
-	_, err := q.db.Exec(ctx, removeChatFromUser, arg.PhoneNumber, arg.ArrayRemove)
+	_, err := q.db.Exec(ctx, removeChatFromUser, arg.ID, arg.ArrayRemove)
 	return err
 }
 
@@ -70,15 +72,15 @@ const updateUserChats = `-- name: UpdateUserChats :exec
 UPDATE users 
 SET chats = $2, 
     updated_at = NOW() 
-WHERE phone_number = $1
+WHERE id = $1
 `
 
 type UpdateUserChatsParams struct {
-	PhoneNumber string
-	Chats       []int64
+	ID    pgtype.UUID
+	Chats []int64
 }
 
 func (q *Queries) UpdateUserChats(ctx context.Context, arg UpdateUserChatsParams) error {
-	_, err := q.db.Exec(ctx, updateUserChats, arg.PhoneNumber, arg.Chats)
+	_, err := q.db.Exec(ctx, updateUserChats, arg.ID, arg.Chats)
 	return err
 }

@@ -7,25 +7,33 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createSession = `-- name: CreateSession :one
 INSERT INTO sessions (
     token_hash,
-    phone_number
+    user_id
 ) VALUES ($1, $2)
-RETURNING token_hash, phone_number, created_at
+RETURNING token_hash, user_id, created_at
 `
 
 type CreateSessionParams struct {
-	TokenHash   string
-	PhoneNumber string
+	TokenHash string
+	UserID    pgtype.UUID
 }
 
-func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
-	row := q.db.QueryRow(ctx, createSession, arg.TokenHash, arg.PhoneNumber)
-	var i Session
-	err := row.Scan(&i.TokenHash, &i.PhoneNumber, &i.CreatedAt)
+type CreateSessionRow struct {
+	TokenHash string
+	UserID    pgtype.UUID
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (CreateSessionRow, error) {
+	row := q.db.QueryRow(ctx, createSession, arg.TokenHash, arg.UserID)
+	var i CreateSessionRow
+	err := row.Scan(&i.TokenHash, &i.UserID, &i.CreatedAt)
 	return i, err
 }
 
@@ -41,36 +49,48 @@ func (q *Queries) DeleteSession(ctx context.Context, tokenHash string) error {
 
 const deleteUserSessions = `-- name: DeleteUserSessions :exec
 DELETE FROM sessions 
-WHERE phone_number = $1
+WHERE user_id = $1
 `
 
-func (q *Queries) DeleteUserSessions(ctx context.Context, phoneNumber string) error {
-	_, err := q.db.Exec(ctx, deleteUserSessions, phoneNumber)
+func (q *Queries) DeleteUserSessions(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserSessions, userID)
 	return err
 }
 
 const getSession = `-- name: GetSession :one
-SELECT token_hash, phone_number, created_at FROM sessions 
+SELECT token_hash, user_id, created_at FROM sessions 
 WHERE token_hash = $1
 `
 
-func (q *Queries) GetSession(ctx context.Context, tokenHash string) (Session, error) {
+type GetSessionRow struct {
+	TokenHash string
+	UserID    pgtype.UUID
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetSession(ctx context.Context, tokenHash string) (GetSessionRow, error) {
 	row := q.db.QueryRow(ctx, getSession, tokenHash)
-	var i Session
-	err := row.Scan(&i.TokenHash, &i.PhoneNumber, &i.CreatedAt)
+	var i GetSessionRow
+	err := row.Scan(&i.TokenHash, &i.UserID, &i.CreatedAt)
 	return i, err
 }
 
-const getSessionByPhone = `-- name: GetSessionByPhone :one
-SELECT token_hash, phone_number, created_at FROM sessions 
-WHERE phone_number = $1 
+const getSessionByUserID = `-- name: GetSessionByUserID :one
+SELECT token_hash, user_id, created_at FROM sessions 
+WHERE user_id = $1 
 ORDER BY created_at DESC 
 LIMIT 1
 `
 
-func (q *Queries) GetSessionByPhone(ctx context.Context, phoneNumber string) (Session, error) {
-	row := q.db.QueryRow(ctx, getSessionByPhone, phoneNumber)
-	var i Session
-	err := row.Scan(&i.TokenHash, &i.PhoneNumber, &i.CreatedAt)
+type GetSessionByUserIDRow struct {
+	TokenHash string
+	UserID    pgtype.UUID
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetSessionByUserID(ctx context.Context, userID pgtype.UUID) (GetSessionByUserIDRow, error) {
+	row := q.db.QueryRow(ctx, getSessionByUserID, userID)
+	var i GetSessionByUserIDRow
+	err := row.Scan(&i.TokenHash, &i.UserID, &i.CreatedAt)
 	return i, err
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"ReAction/internal/storage/sqlc/gen"
+	db "ReAction/internal/storage/sqlc/gen"
 )
 
 type ChatRepository struct {
@@ -18,55 +18,72 @@ func NewChatRepository(q *db.Queries) *ChatRepository {
 type Chat struct {
 	ID         int64  `json:"id"`
 	Name       string `json:"name"`
-	Type       string `json:"type"` // "private", "group", "channel", "supergroup"
+	Type       string `json:"type"`
 	IsSelected bool   `json:"is_selected"`
 }
 
-func (r *ChatRepository) GetSelectedChats(ctx context.Context, phoneNumber string) ([]int64, error) {
-	user, err := r.q.GetUserByPhone(ctx, phoneNumber)
+func (r *ChatRepository) GetSelectedChats(ctx context.Context, userID string) ([]int64, error) {
+	uid, err := ParseUUID(userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
+		return nil, err
 	}
-
-	return user.Chats, nil
+	chats, err := r.q.GetUserChats(ctx, uid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user chats: %w", err)
+	}
+	return chats, nil
 }
 
-func (r *ChatRepository) UpdateSelectedChats(ctx context.Context, phoneNumber string, chatIDs []int64) error {
+func (r *ChatRepository) UpdateSelectedChats(ctx context.Context, userID string, chatIDs []int64) error {
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return err
+	}
 	return r.q.UpdateUserChats(ctx, db.UpdateUserChatsParams{
-		PhoneNumber: phoneNumber,
-		Chats:       chatIDs,
+		ID:    uid,
+		Chats: chatIDs,
 	})
 }
 
-func (r *ChatRepository) AddChat(ctx context.Context, phoneNumber string, chatID int64) error {
+func (r *ChatRepository) AddChat(ctx context.Context, userID string, chatID int64) error {
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return err
+	}
 	return r.q.AddChatToUser(ctx, db.AddChatToUserParams{
-		PhoneNumber: phoneNumber,
+		ID:          uid,
 		ArrayAppend: chatID,
 	})
 }
 
-func (r *ChatRepository) RemoveChat(ctx context.Context, phoneNumber string, chatID int64) error {
+func (r *ChatRepository) RemoveChat(ctx context.Context, userID string, chatID int64) error {
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return err
+	}
 	return r.q.RemoveChatFromUser(ctx, db.RemoveChatFromUserParams{
-		PhoneNumber: phoneNumber,
+		ID:          uid,
 		ArrayRemove: chatID,
 	})
 }
 
-func (r *ChatRepository) ClearChats(ctx context.Context, phoneNumber string) error {
-	return r.q.ClearUserChats(ctx, phoneNumber)
+func (r *ChatRepository) ClearChats(ctx context.Context, userID string) error {
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return err
+	}
+	return r.q.ClearUserChats(ctx, uid)
 }
 
-func (r *ChatRepository) IsChatSelected(ctx context.Context, phoneNumber string, chatID int64) (bool, error) {
-	selectedChats, err := r.GetSelectedChats(ctx, phoneNumber)
+func (r *ChatRepository) IsChatSelected(ctx context.Context, userID string, chatID int64) (bool, error) {
+	selectedChats, err := r.GetSelectedChats(ctx, userID)
 	if err != nil {
 		return false, err
 	}
-
 	for _, id := range selectedChats {
 		if id == chatID {
 			return true, nil
 		}
 	}
-
 	return false, nil
 }

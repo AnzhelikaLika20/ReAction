@@ -7,19 +7,75 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createUser = `-- name: CreateUser :one
+const createUserWithCredentials = `-- name: CreateUserWithCredentials :one
+INSERT INTO users (
+    email,
+    password_hash
+) VALUES (lower($1), $2)
+RETURNING id, email, password_hash, phone_number, is_active, created_at, updated_at, chats
+`
+
+type CreateUserWithCredentialsParams struct {
+	Lower        string
+	PasswordHash pgtype.Text
+}
+
+type CreateUserWithCredentialsRow struct {
+	ID           pgtype.UUID
+	Email        pgtype.Text
+	PasswordHash pgtype.Text
+	PhoneNumber  pgtype.Text
+	IsActive     pgtype.Bool
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	Chats        []int64
+}
+
+func (q *Queries) CreateUserWithCredentials(ctx context.Context, arg CreateUserWithCredentialsParams) (CreateUserWithCredentialsRow, error) {
+	row := q.db.QueryRow(ctx, createUserWithCredentials, arg.Lower, arg.PasswordHash)
+	var i CreateUserWithCredentialsRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.PhoneNumber,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Chats,
+	)
+	return i, err
+}
+
+const createUserWithPhone = `-- name: CreateUserWithPhone :one
 INSERT INTO users (
     phone_number
 ) VALUES ($1)
-RETURNING phone_number, is_active, created_at, updated_at, chats
+RETURNING id, email, password_hash, phone_number, is_active, created_at, updated_at, chats
 `
 
-func (q *Queries) CreateUser(ctx context.Context, phoneNumber string) (User, error) {
-	row := q.db.QueryRow(ctx, createUser, phoneNumber)
-	var i User
+type CreateUserWithPhoneRow struct {
+	ID           pgtype.UUID
+	Email        pgtype.Text
+	PasswordHash pgtype.Text
+	PhoneNumber  pgtype.Text
+	IsActive     pgtype.Bool
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	Chats        []int64
+}
+
+func (q *Queries) CreateUserWithPhone(ctx context.Context, phoneNumber pgtype.Text) (CreateUserWithPhoneRow, error) {
+	row := q.db.QueryRow(ctx, createUserWithPhone, phoneNumber)
+	var i CreateUserWithPhoneRow
 	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
 		&i.PhoneNumber,
 		&i.IsActive,
 		&i.CreatedAt,
@@ -31,23 +87,101 @@ func (q *Queries) CreateUser(ctx context.Context, phoneNumber string) (User, err
 
 const deleteUser = `-- name: DeleteUser :exec
 DELETE FROM users 
-WHERE phone_number = $1
+WHERE id = $1
 `
 
-func (q *Queries) DeleteUser(ctx context.Context, phoneNumber string) error {
-	_, err := q.db.Exec(ctx, deleteUser, phoneNumber)
+func (q *Queries) DeleteUser(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUser, id)
 	return err
 }
 
+const getUserByEmail = `-- name: GetUserByEmail :one
+SELECT id, email, password_hash, phone_number, is_active, created_at, updated_at, chats FROM users 
+WHERE lower(email) = lower($1)
+`
+
+type GetUserByEmailRow struct {
+	ID           pgtype.UUID
+	Email        pgtype.Text
+	PasswordHash pgtype.Text
+	PhoneNumber  pgtype.Text
+	IsActive     pgtype.Bool
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	Chats        []int64
+}
+
+func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (GetUserByEmailRow, error) {
+	row := q.db.QueryRow(ctx, getUserByEmail, lower)
+	var i GetUserByEmailRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.PhoneNumber,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Chats,
+	)
+	return i, err
+}
+
+const getUserByID = `-- name: GetUserByID :one
+SELECT id, email, password_hash, phone_number, is_active, created_at, updated_at, chats FROM users 
+WHERE id = $1
+`
+
+type GetUserByIDRow struct {
+	ID           pgtype.UUID
+	Email        pgtype.Text
+	PasswordHash pgtype.Text
+	PhoneNumber  pgtype.Text
+	IsActive     pgtype.Bool
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	Chats        []int64
+}
+
+func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDRow, error) {
+	row := q.db.QueryRow(ctx, getUserByID, id)
+	var i GetUserByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.PhoneNumber,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Chats,
+	)
+	return i, err
+}
+
 const getUserByPhone = `-- name: GetUserByPhone :one
-SELECT phone_number, is_active, created_at, updated_at, chats FROM users 
+SELECT id, email, password_hash, phone_number, is_active, created_at, updated_at, chats FROM users 
 WHERE phone_number = $1
 `
 
-func (q *Queries) GetUserByPhone(ctx context.Context, phoneNumber string) (User, error) {
+type GetUserByPhoneRow struct {
+	ID           pgtype.UUID
+	Email        pgtype.Text
+	PasswordHash pgtype.Text
+	PhoneNumber  pgtype.Text
+	IsActive     pgtype.Bool
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	Chats        []int64
+}
+
+func (q *Queries) GetUserByPhone(ctx context.Context, phoneNumber pgtype.Text) (GetUserByPhoneRow, error) {
 	row := q.db.QueryRow(ctx, getUserByPhone, phoneNumber)
-	var i User
+	var i GetUserByPhoneRow
 	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
 		&i.PhoneNumber,
 		&i.IsActive,
 		&i.CreatedAt,
@@ -59,12 +193,50 @@ func (q *Queries) GetUserByPhone(ctx context.Context, phoneNumber string) (User,
 
 const updateUserLastAuth = `-- name: UpdateUserLastAuth :exec
 UPDATE users 
-SET 
-    updated_at = NOW()
-WHERE phone_number = $1
+SET updated_at = NOW()
+WHERE id = $1
 `
 
-func (q *Queries) UpdateUserLastAuth(ctx context.Context, phoneNumber string) error {
-	_, err := q.db.Exec(ctx, updateUserLastAuth, phoneNumber)
+func (q *Queries) UpdateUserLastAuth(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, updateUserLastAuth, id)
 	return err
+}
+
+const updateUserTelegramPhone = `-- name: UpdateUserTelegramPhone :one
+UPDATE users 
+SET phone_number = $2, updated_at = NOW()
+WHERE id = $1
+RETURNING id, email, password_hash, phone_number, is_active, created_at, updated_at, chats
+`
+
+type UpdateUserTelegramPhoneParams struct {
+	ID          pgtype.UUID
+	PhoneNumber pgtype.Text
+}
+
+type UpdateUserTelegramPhoneRow struct {
+	ID           pgtype.UUID
+	Email        pgtype.Text
+	PasswordHash pgtype.Text
+	PhoneNumber  pgtype.Text
+	IsActive     pgtype.Bool
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	Chats        []int64
+}
+
+func (q *Queries) UpdateUserTelegramPhone(ctx context.Context, arg UpdateUserTelegramPhoneParams) (UpdateUserTelegramPhoneRow, error) {
+	row := q.db.QueryRow(ctx, updateUserTelegramPhone, arg.ID, arg.PhoneNumber)
+	var i UpdateUserTelegramPhoneRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.PhoneNumber,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Chats,
+	)
+	return i, err
 }

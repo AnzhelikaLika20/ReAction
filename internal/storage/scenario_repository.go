@@ -20,7 +20,7 @@ func NewScenarioRepository(q *db.Queries) *ScenarioRepository {
 }
 
 type CreateScenarioParams struct {
-	PhoneNumber     string
+	UserID          string
 	Name            string
 	Description     string
 	TriggerPhrase   string
@@ -32,7 +32,7 @@ type CreateScenarioParams struct {
 
 type UpdateScenarioParams struct {
 	ID              string
-	PhoneNumber     string
+	UserID          string
 	Name            *string
 	Description     *string
 	TriggerPhrase   *string
@@ -42,7 +42,54 @@ type UpdateScenarioParams struct {
 	IsActive        *bool
 }
 
+func scenarioFromCreateRow(r db.CreateScenarioRow) db.Scenario {
+	return db.Scenario{
+		ID:          r.ID,
+		UserID:      r.UserID,
+		Title:       r.Title,
+		Description: r.Description,
+		Conditions:  r.Conditions,
+		Params:      r.Params,
+		IsActive:    r.IsActive,
+		CreatedAt:   r.CreatedAt,
+		UpdatedAt:   r.UpdatedAt,
+	}
+}
+
+func scenarioFromGetRow(r db.GetScenarioByIDRow) db.Scenario {
+	return db.Scenario{
+		ID:          r.ID,
+		UserID:      r.UserID,
+		Title:       r.Title,
+		Description: r.Description,
+		Conditions:  r.Conditions,
+		Params:      r.Params,
+		IsActive:    r.IsActive,
+		CreatedAt:   r.CreatedAt,
+		UpdatedAt:   r.UpdatedAt,
+	}
+}
+
+func scenarioFromUpdateRow(r db.UpdateScenarioRow) db.Scenario {
+	return db.Scenario{
+		ID:          r.ID,
+		UserID:      r.UserID,
+		Title:       r.Title,
+		Description: r.Description,
+		Conditions:  r.Conditions,
+		Params:      r.Params,
+		IsActive:    r.IsActive,
+		CreatedAt:   r.CreatedAt,
+		UpdatedAt:   r.UpdatedAt,
+	}
+}
+
 func (r *ScenarioRepository) Create(ctx context.Context, params CreateScenarioParams) (*db.Scenario, error) {
+	userUUID, err := ParseUUID(params.UserID)
+	if err != nil {
+		return nil, err
+	}
+
 	conditions := map[string]interface{}{
 		"trigger_phrase": params.TriggerPhrase,
 	}
@@ -61,46 +108,71 @@ func (r *ScenarioRepository) Create(ctx context.Context, params CreateScenarioPa
 		return nil, fmt.Errorf("failed to marshal params: %w", err)
 	}
 
-	dbParams := db.CreateScenarioParams{
-		PhoneNumber: params.PhoneNumber,
+	row, err := r.q.CreateScenario(ctx, db.CreateScenarioParams{
+		UserID:      userUUID,
 		Title:       params.Name,
 		Description: pgtype.Text{String: params.Description, Valid: params.Description != ""},
 		Conditions:  conditionsJSON,
 		Params:      paramsJSONBytes,
 		IsActive:    pgtype.Bool{Bool: params.IsActive, Valid: true},
-	}
-
-	scenario, err := r.q.CreateScenario(ctx, dbParams)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scenario: %w", err)
 	}
 
-	return &scenario, nil
+	s := scenarioFromCreateRow(row)
+	return &s, nil
 }
 
-func (r *ScenarioRepository) GetByID(ctx context.Context, id, phoneNumber string) (db.Scenario, error) {
-	uuid, err := uuid.Parse(id)
+func (r *ScenarioRepository) GetByID(ctx context.Context, id, userID string) (db.Scenario, error) {
+	sid, err := uuid.Parse(id)
 	if err != nil {
 		return db.Scenario{}, fmt.Errorf("invalid UUID: %w", err)
 	}
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return db.Scenario{}, err
+	}
 
-	scenario, err := r.q.GetScenarioByID(ctx, db.GetScenarioByIDParams{
-		ID:          pgtype.UUID{Bytes: uuid, Valid: true},
-		PhoneNumber: phoneNumber,
+	row, err := r.q.GetScenarioByID(ctx, db.GetScenarioByIDParams{
+		ID:     pgtype.UUID{Bytes: sid, Valid: true},
+		UserID: uid,
 	})
 	if err != nil {
 		return db.Scenario{}, fmt.Errorf("scenario not found: %w", err)
 	}
 
-	return scenario, nil
+	return scenarioFromGetRow(row), nil
 }
 
-func (r *ScenarioRepository) GetUserScenarios(ctx context.Context, phoneNumber string) ([]db.Scenario, error) {
-	return r.q.GetUserScenarios(ctx, phoneNumber)
+func (r *ScenarioRepository) GetUserScenarios(ctx context.Context, userID string) ([]db.Scenario, error) {
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.q.GetUserScenarios(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]db.Scenario, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, db.Scenario{
+			ID:          row.ID,
+			UserID:      row.UserID,
+			Title:       row.Title,
+			Description: row.Description,
+			Conditions:  row.Conditions,
+			Params:      row.Params,
+			IsActive:    row.IsActive,
+			CreatedAt:   row.CreatedAt,
+			UpdatedAt:   row.UpdatedAt,
+		})
+	}
+	return out, nil
 }
 
 func (r *ScenarioRepository) Update(ctx context.Context, params UpdateScenarioParams) (db.Scenario, error) {
-	current, err := r.GetByID(ctx, params.ID, params.PhoneNumber)
+	current, err := r.GetByID(ctx, params.ID, params.UserID)
 	if err != nil {
 		return db.Scenario{}, fmt.Errorf("scenario not found: %w", err)
 	}
@@ -150,14 +222,18 @@ func (r *ScenarioRepository) Update(ctx context.Context, params UpdateScenarioPa
 		return db.Scenario{}, fmt.Errorf("failed to marshal params: %w", err)
 	}
 
-	uuid, err := uuid.Parse(params.ID)
+	sid, err := uuid.Parse(params.ID)
 	if err != nil {
 		return db.Scenario{}, fmt.Errorf("invalid UUID: %w", err)
 	}
+	uid, err := ParseUUID(params.UserID)
+	if err != nil {
+		return db.Scenario{}, err
+	}
 
-	scenario, err := r.q.UpdateScenario(ctx, db.UpdateScenarioParams{
-		ID:          pgtype.UUID{Bytes: uuid, Valid: true},
-		PhoneNumber: params.PhoneNumber,
+	row, err := r.q.UpdateScenario(ctx, db.UpdateScenarioParams{
+		ID:          pgtype.UUID{Bytes: sid, Valid: true},
+		UserID:      uid,
 		Title:       title,
 		Description: description,
 		Conditions:  conditionsJSON,
@@ -168,17 +244,21 @@ func (r *ScenarioRepository) Update(ctx context.Context, params UpdateScenarioPa
 		return db.Scenario{}, fmt.Errorf("failed to update scenario: %w", err)
 	}
 
-	return scenario, nil
+	return scenarioFromUpdateRow(row), nil
 }
 
-func (r *ScenarioRepository) Delete(ctx context.Context, id, phoneNumber string) error {
-	uuid, err := uuid.Parse(id)
+func (r *ScenarioRepository) Delete(ctx context.Context, id, userID string) error {
+	sid, err := uuid.Parse(id)
 	if err != nil {
 		return fmt.Errorf("invalid UUID: %w", err)
 	}
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return err
+	}
 
 	return r.q.DeleteScenario(ctx, db.DeleteScenarioParams{
-		ID:          pgtype.UUID{Bytes: uuid, Valid: true},
-		PhoneNumber: phoneNumber,
+		ID:     pgtype.UUID{Bytes: sid, Valid: true},
+		UserID: uid,
 	})
 }

@@ -48,6 +48,7 @@ func RunHTTPServer(
 	chatHandler := handlers.NewChatHandler(chatService, authService)
 
 	authHandlers.RegisterAuthRoutes(router)
+	handlers.RegisterUserRoutes(router, authService)
 	handlers.RegisterHealthRoutes(router)
 	handlers.RegisterCalendarRoutes(router, cfg.Server, remindersService)
 	scenarioHandler.RegisterScenarioRoutes(router)
@@ -83,6 +84,7 @@ func jwtMiddleware(authService *auth.AuthService) gin.HandlerFunc {
 		}
 
 		c.Set("claims", claims)
+		c.Set("user_id", claims.UserID)
 		c.Set("session_id", claims.SessionID)
 		c.Set("phone_number", claims.PhoneNumber)
 
@@ -92,7 +94,8 @@ func jwtMiddleware(authService *auth.AuthService) gin.HandlerFunc {
 
 func isPublicRoute(path string) bool {
 	publicRoutes := []string{
-		"/auth/token",
+		"/auth/register",
+		"/auth/login",
 		"/ping",
 		"/webcal/",
 		"/swagger/",

@@ -14,15 +14,15 @@ type Listener struct {
 	isRunning     bool
 	cancel        context.CancelFunc
 	kafkaProducer *chat_updates.ChatUpdatesProducer
-	phoneNumber   string
+	appUserID     string
 	chatsService  *chats.ChatService
 }
 
-func NewListener(client *tdlib.Client, phoneNumber string, chatsService *chats.ChatService, kafkaProducer *chat_updates.ChatUpdatesProducer) *Listener {
+func NewListener(client *tdlib.Client, appUserID string, chatsService *chats.ChatService, kafkaProducer *chat_updates.ChatUpdatesProducer) *Listener {
 	return &Listener{
 		client:        client,
 		kafkaProducer: kafkaProducer,
-		phoneNumber:   phoneNumber,
+		appUserID:     appUserID,
 		chatsService:  chatsService,
 	}
 }
@@ -69,7 +69,7 @@ func (l *Listener) Start(ctx context.Context) {
 		eventFilter := func(msg *tdlib.TdMessage) bool {
 			updateMsg := (*msg).(*tdlib.UpdateNewMessage)
 
-			isAllowed, err := l.chatsService.IsChatAllowed(ctx, l.phoneNumber, updateMsg.Message.ChatID)
+			isAllowed, err := l.chatsService.IsChatAllowed(ctx, l.appUserID, updateMsg.Message.ChatID)
 			if err != nil {
 				log.Println(err)
 				return false
@@ -121,7 +121,8 @@ func (l *Listener) sendToKafka(message *Message, eventType string) {
 	}
 
 	messageEvent := chat_updates.ChatUpdateMessageEvent{
-		PhoneNumber: l.phoneNumber,
+		UserID:      l.appUserID,
+		PhoneNumber: l.appUserID,
 		EventType:   eventType,
 		MessageID:   message.ID,
 		ChatID:      message.ChatID,
