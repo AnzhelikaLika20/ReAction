@@ -12,20 +12,23 @@ import (
 )
 
 const addChatToMessengerAccount = `-- name: AddChatToMessengerAccount :exec
-UPDATE user_messenger_accounts
-SET selected_chat_ids = array_append(selected_chat_ids, $3),
+UPDATE user_messenger_accounts AS u
+SET selected_chat_ids = CASE
+    WHEN $1::bigint = ANY (COALESCE(u.selected_chat_ids, '{}')) THEN u.selected_chat_ids
+    ELSE array_append(u.selected_chat_ids, $1::bigint)
+END,
     updated_at = NOW()
-WHERE id = $1 AND user_id = $2
+WHERE u.id = $2 AND u.user_id = $3
 `
 
 type AddChatToMessengerAccountParams struct {
-	ID          pgtype.UUID
-	UserID      pgtype.UUID
-	ArrayAppend interface{}
+	ChatID int64
+	ID     pgtype.UUID
+	UserID pgtype.UUID
 }
 
 func (q *Queries) AddChatToMessengerAccount(ctx context.Context, arg AddChatToMessengerAccountParams) error {
-	_, err := q.db.Exec(ctx, addChatToMessengerAccount, arg.ID, arg.UserID, arg.ArrayAppend)
+	_, err := q.db.Exec(ctx, addChatToMessengerAccount, arg.ChatID, arg.ID, arg.UserID)
 	return err
 }
 

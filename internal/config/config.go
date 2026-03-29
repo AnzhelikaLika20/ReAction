@@ -58,7 +58,7 @@ type JWTConfig struct {
 type AIConfig struct {
 	APIKey         string `yaml:"api_key" env:"YANDEX_AI_API_KEY"`
 	FolderID       string `yaml:"folder_id" env:"YANDEX_AI_FOLDER_ID"`
-	YandexIamToken string `yaml:"folder_id" env:"YANDEX_IAM_TOKEN"`
+	YandexIamToken string `yaml:"yandex_iam_token" env:"YANDEX_IAM_TOKEN"`
 }
 
 func Load() (*AppConfig, error) {
@@ -85,10 +85,10 @@ func Load() (*AppConfig, error) {
 	cfg.Server.BaseURL = GetEnv("SERVER_BASE_URL", "https://api.re-action.site")
 
 	cfg.Kafka.Broker = GetEnv("KAFKA_BROKER", "kafka:9092")
-	if topic := os.Getenv("KAFKA_USER_ACTIONS_TOPIC"); topic != "" {
+	if topic := os.Getenv("KAFKA_CHAT_UPDATES_TOPIC"); topic != "" {
 		cfg.Kafka.ChatUpdatesTopic = topic
 	}
-	if topic := os.Getenv("KAFKA_CHAT_UPDATES_TOPIC"); topic != "" {
+	if topic := os.Getenv("KAFKA_USER_ACTIONS_TOPIC"); topic != "" {
 		cfg.Kafka.UserActionsTopic = topic
 	}
 	cfg.Kafka.GroupID = "reaction-telegram"

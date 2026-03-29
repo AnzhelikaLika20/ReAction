@@ -28,8 +28,11 @@ type AIService struct {
 }
 
 func NewYandexGPTService(cfg *config.AppConfig) (*AIService, error) {
-	if cfg.AIConfig.APIKey == "" || cfg.AIConfig.FolderID == "" {
-		return nil, fmt.Errorf("Yandex GPT API configuration is missing")
+	if cfg.AIConfig.FolderID == "" {
+		return nil, fmt.Errorf("Yandex GPT: YANDEX_AI_FOLDER_ID is required")
+	}
+	if cfg.AIConfig.APIKey == "" && cfg.AIConfig.YandexIamToken == "" {
+		return nil, fmt.Errorf("Yandex GPT: set YANDEX_AI_API_KEY (recommended) or YANDEX_IAM_TOKEN")
 	}
 
 	httpClient := &http.Client{
@@ -44,6 +47,14 @@ func NewYandexGPTService(cfg *config.AppConfig) (*AIService, error) {
 
 	service.initPromptTemplates()
 	return service, nil
+}
+
+func (s *AIService) setAuthHeader(req *http.Request) {
+	if s.config.APIKey != "" {
+		req.Header.Set("Authorization", "Api-Key "+s.config.APIKey)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+s.config.YandexIamToken)
 }
 
 func (s *AIService) initPromptTemplates() {
@@ -66,14 +77,77 @@ func (s *AIService) CheckMessage(
 	message string,
 	contextType string,
 ) (*CheckResult, error) {
+	return s.CheckMessageWithHistory(ctx, []string{message}, contextType)
+}
+
+func (s *AIService) CheckMessageWithHistory(
+	ctx context.Context,
+	history []string,
+	contextType string,
+) (*CheckResult, error) {
+	return s.CheckMessageWithHistoryAndScenarios(ctx, history, contextType, nil)
+}
+
+func (s *AIService) CheckMessageWithHistoryAndScenarios(
+	ctx context.Context,
+	history []string,
+	contextType string,
+	scenarios []UserScenarioForAI,
+) (*CheckResult, error) {
+	return s.checkWithHistoryAndScenarios(ctx, history, contextType, scenarios)
+}
+
+func (s *AIService) checkWithHistoryAndScenarios(
+	ctx context.Context,
+	history []string,
+	contextType string,
+	scenarios []UserScenarioForAI,
+) (*CheckResult, error) {
+	if len(history) == 0 {
+		return nil, fmt.Errorf("empty message history")
+	}
 	if contextType == "" {
-		contextType = "promise" // default
+		contextType = "promise"
 	}
 
 	prompt, exists := s.promptTemplates[contextType]
 	if !exists {
 		return nil, fmt.Errorf("unknown context type: %s", contextType)
 	}
+
+	if len(history) > 1 {
+		prompt += `
+
+Тебе передаётся фрагмент переписки: сначала более старые сообщения, в конце — то, что нужно оценить.
+Учитывай контекст предыдущих реплик; итоговая оценка (detected, scenario_id, reminder) относится только к последнему сообщению.`
+	}
+
+	prompt += `
+
+Текущий момент для интерпретации «завтра», «в пятницу» и т.п. (RFC3339): ` + time.Now().Format(time.RFC3339)
+
+	if len(scenarios) > 0 {
+		raw, err := json.Marshal(scenarios)
+		if err != nil {
+			return nil, fmt.Errorf("marshal scenarios: %w", err)
+		}
+		prompt += `
+
+Сценарии пользователя (JSON; id — UUID сценария, title — название, trigger_phrase — ключевая фраза/триггер):
+` + string(raw) + `
+
+Если последнее сообщение по смыслу однозначно подходит под один из сценариев (учитывай trigger_phrase и title): detected=true, scenario_id = поле id этого сценария (строка), заполни reminder осмысленными значениями.
+Если ни один сценарий не подходит или выбор неоднозначен: detected=false, scenario_id="" и все поля reminder — пустые строки "" (схема ответа требует эти ключи всегда).`
+	} else {
+		prompt += `
+
+Список сценариев в этом запросе пуст: всегда scenario_id="".`
+	}
+
+	prompt += `
+
+Если detected=true, заполни объект reminder: title — короткое название встречи или задачи; description — краткое описание (1–2 предложения); datetime — начало в ISO 8601 с часовым поясом; end_datetime — окончание в том же формате (если в тексте нет — задай разумную длительность, например +1 час от начала).
+Если detected=false — scenario_id="" и reminder: title="", description="", datetime="", end_datetime="".`
 
 	systemMessage := Message{
 		Role: "system",
@@ -82,10 +156,23 @@ func (s *AIService) CheckMessage(
 
 	userMessage := Message{
 		Role: "user",
-		Text: message,
+		Text: formatHistoryForModel(history),
 	}
 
-	return s.makeAPIRequest(ctx, systemMessage, userMessage)
+	return s.makeAPIRequest(ctx, systemMessage, userMessage, classificationResultSchema())
+}
+
+func formatHistoryForModel(messages []string) string {
+	if len(messages) == 1 {
+		return messages[0]
+	}
+	var b strings.Builder
+	b.WriteString("Фрагмент чата (хронологически, сверху — раньше, снизу — новее):\n\n")
+	for i := 0; i < len(messages)-1; i++ {
+		fmt.Fprintf(&b, "[ранее] %s\n", messages[i])
+	}
+	fmt.Fprintf(&b, "\n[последнее сообщение — только его оцени] %s", messages[len(messages)-1])
+	return b.String()
 }
 
 func (s *AIService) CheckMessageWithCustomContext(
@@ -94,7 +181,9 @@ func (s *AIService) CheckMessageWithCustomContext(
 	contextCheck *ContextCheck,
 ) (*CheckResult, error) {
 	customPrompt := fmt.Sprintf(`Ты анализируешь сообщения на наличие контекста: %s.
-Параметры анализа: %v.`,
+Параметры анализа: %v.
+
+Поле scenario_id всегда присутствует в JSON: используй пустую строку "".`,
 		contextCheck.Description,
 		contextCheck.Parameters)
 
@@ -108,7 +197,7 @@ func (s *AIService) CheckMessageWithCustomContext(
 		Text: message,
 	}
 
-	return s.makeAPIRequest(ctx, systemMessage, userMessage)
+	return s.makeAPIRequest(ctx, systemMessage, userMessage, classificationResultSchema())
 }
 
 func (s *AIService) BatchCheckMessages(
@@ -179,22 +268,58 @@ type yandexGPTResponse struct {
 	} `json:"result"`
 }
 
-func CreatePromiseDetectionSchema() map[string]interface{} {
+func classificationResultSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"detected": map[string]interface{}{
 				"type":        "boolean",
-				"description": "Было ли обнаружено обещание",
+				"description": "Есть ли в целевом сообщении искомый признак (обещание / срок / намерение — по задаче system).",
+			},
+			"confidence": map[string]interface{}{
+				"type":        "number",
+				"description": "Уверенность от 0 до 1.",
+			},
+			"reason": map[string]interface{}{
+				"type":        "string",
+				"description": "Краткое обоснование на русском.",
+			},
+			"scenario_id": map[string]interface{}{
+				"type":        "string",
+				"description": "UUID сценария из списка при detected=true; иначе пустая строка.",
+			},
+			"reminder": map[string]interface{}{
+				"type":        "object",
+				"description": "При detected=true — данные напоминания; при detected=false — все поля пустые строки.",
+				"properties": map[string]interface{}{
+					"title": map[string]interface{}{
+						"type":        "string",
+						"description": "Название встречи или задачи.",
+					},
+					"description": map[string]interface{}{
+						"type":        "string",
+						"description": "Краткое описание.",
+					},
+					"datetime": map[string]interface{}{
+						"type":        "string",
+						"description": "Начало события, ISO 8601 с оффсетом, например 2026-04-02T14:00:00+03:00",
+					},
+					"end_datetime": map[string]interface{}{
+						"type":        "string",
+						"description": "Окончание события, ISO 8601 с оффсетом; при неизвестности — через 1 час после начала.",
+					},
+				},
+				"required": []string{"title", "description", "datetime", "end_datetime"},
 			},
 		},
-		"required": []string{"detected"},
+		"required": []string{"detected", "confidence", "reason", "scenario_id", "reminder"},
 	}
 }
 
 func (s *AIService) makeAPIRequest(
 	ctx context.Context,
 	systemMessage, userMessage Message,
+	responseSchema map[string]interface{},
 ) (*CheckResult, error) {
 	modelURI := fmt.Sprintf("gpt://%s/%s/latest", s.config.FolderID, modelYandexGPTLite)
 
@@ -203,11 +328,11 @@ func (s *AIService) makeAPIRequest(
 		CompletionOptions: CompletionOptions{
 			Stream:      false,
 			Temperature: 0.1,
-			MaxTokens:   1000,
+			MaxTokens:   2000,
 		},
 		Messages: []Message{systemMessage, userMessage},
 		JsonSchema: &JsonSchema{
-			Schema: CreatePromiseDetectionSchema(),
+			Schema: responseSchema,
 		},
 	}
 
@@ -232,7 +357,7 @@ func (s *AIService) makeAPIRequest(
 		}
 
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.config.YandexIamToken))
+		s.setAuthHeader(req)
 
 		resp, err := s.httpClient.Do(req)
 		if err != nil {
@@ -252,7 +377,6 @@ func (s *AIService) makeAPIRequest(
 		log.Printf("FULL RESPONSE BODY:\n%s\n", string(body))
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
 			lastErr = fmt.Errorf("API error: %s, body: %s", resp.Status, string(body))
 
 			if resp.StatusCode >= 400 && resp.StatusCode < 500 {

@@ -2,8 +2,10 @@ package chat_updates
 
 import (
 	"ReAction/internal/config"
+	"ReAction/internal/kafka/partitionkey"
 	"ReAction/internal/kafka/user_actions"
 	"ReAction/internal/services/ai"
+	"ReAction/internal/storage"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +17,10 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
+const aiContextMessageCount = 6
+
+const maxStoredMessagesPerChat = 128
+
 type ChatUpdatesConsumer struct {
 	reader             *kafka.Reader
 	config             config.KafkaConfig
@@ -24,6 +30,9 @@ type ChatUpdatesConsumer struct {
 	mu                 sync.RWMutex
 	userActionProducer *user_actions.UserActionProducer
 	aiService          *ai.AIService
+	scenarioRepo       *storage.ScenarioRepository
+	historyMu          sync.Mutex
+	recentByChat       map[string][]string // user_id+chat_id -> тексты по порядку
 }
 
 type ConversationMessage struct {
@@ -47,7 +56,12 @@ type ConversationMessage struct {
 	Partition          int       `json:"-"`
 }
 
-func NewChatUpdatesConsumer(cfg config.KafkaConfig, userActionsProducer *user_actions.UserActionProducer, aiService *ai.AIService) (*ChatUpdatesConsumer, error) {
+func NewChatUpdatesConsumer(
+	cfg config.KafkaConfig,
+	userActionsProducer *user_actions.UserActionProducer,
+	aiService *ai.AIService,
+	scenarioRepo *storage.ScenarioRepository,
+) (*ChatUpdatesConsumer, error) {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:        []string{cfg.Broker},
 		Topic:          cfg.ChatUpdatesTopic,
@@ -65,9 +79,32 @@ func NewChatUpdatesConsumer(cfg config.KafkaConfig, userActionsProducer *user_ac
 		topic:              cfg.ChatUpdatesTopic,
 		userActionProducer: userActionsProducer,
 		aiService:          aiService,
+		scenarioRepo:       scenarioRepo,
+		recentByChat:       make(map[string][]string),
 	}
 
 	return c, nil
+}
+
+func (c *ChatUpdatesConsumer) appendMessageAndWindow(userID string, chatID int64, text string) []string {
+	c.historyMu.Lock()
+	defer c.historyMu.Unlock()
+
+	key := partitionkey.UserChat(userID, chatID)
+	buf := append(c.recentByChat[key], text)
+	if len(buf) > maxStoredMessagesPerChat {
+		buf = buf[len(buf)-maxStoredMessagesPerChat:]
+	}
+	c.recentByChat[key] = buf
+
+	n := len(buf)
+	take := aiContextMessageCount
+	if n < take {
+		take = n
+	}
+	out := make([]string, take)
+	copy(out, buf[n-take:])
+	return out
 }
 
 func (c *ChatUpdatesConsumer) Start(ctx context.Context) error {
@@ -134,41 +171,118 @@ func (c *ChatUpdatesConsumer) processKafkaMessage(msg kafka.Message) {
 }
 
 func (c *ChatUpdatesConsumer) ScheduleActionIfNeeded(msg ConversationMessage) {
-	// TODO: поменять ключ шардирования
-	if c.userActionProducer != nil && c.userActionProducer.IsReady() {
-		reminderAction, err := c.userActionProducer.ParseAndSendReminderFromText(
-			msg.SessionID,
-			msg.Text,
-		)
-
-		if msg.Text == "" {
-			return
-		}
-
-		ctx, _ := context.WithTimeout(context.Background(), 100*time.Second)
-		result, err := c.aiService.CheckMessage(ctx, msg.Text, "promise")
-		if err != nil {
-			log.Println("Failed to check message with AI",
-				"chat_id", msg.ChatID, "error", err)
-		}
-
-		if result.Detected && result.Confidence > 0.7 {
-			log.Println("Promise detected in message",
-				"chat_id", msg.ChatID,
-				"confidence", result.Confidence,
-				"reason", result.Reason)
-		}
-
-		if err != nil {
-			log.Printf("[CHAT-UPDATES] Failed to create reminder: %v", err)
-		} else if reminderAction != nil {
-			log.Printf("[CHAT-UPDATES] Reminder created for %s: '%s'",
-				msg.SessionID,
-				reminderAction.Reminder.Title)
-		}
-	} else {
-		log.Printf("[CHAT-UPDATES] UserAction producer not available")
+	if msg.Text == "" {
+		return
 	}
+
+	if c.aiService == nil {
+		return
+	}
+
+	if c.scenarioRepo == nil {
+		log.Printf("[CHAT-UPDATES] scenario repository not configured, skip AI reminder flow")
+		return
+	}
+
+	scenarios, err := c.scenarioRepo.ListActiveScenariosForAI(context.Background(), msg.UserID)
+	if err != nil {
+		log.Printf("[CHAT-UPDATES] load scenarios: %v", err)
+		return
+	}
+	if len(scenarios) == 0 {
+		log.Printf("[CHAT-UPDATES] no active scenarios for user, skip")
+		return
+	}
+
+	aiScenarios := make([]ai.UserScenarioForAI, len(scenarios))
+	for i, s := range scenarios {
+		aiScenarios[i] = ai.UserScenarioForAI{
+			ID:            s.ID,
+			Title:         s.Title,
+			TriggerPhrase: s.TriggerPhrase,
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+	window := c.appendMessageAndWindow(msg.UserID, msg.ChatID, msg.Text)
+	result, aiErr := c.aiService.CheckMessageWithHistoryAndScenarios(ctx, window, "promise", aiScenarios)
+	if aiErr != nil {
+		log.Println("Failed to check message with AI",
+			"chat_id", msg.ChatID, "error", aiErr)
+		return
+	}
+	if result == nil || !result.Detected || result.Confidence <= 0.7 {
+		return
+	}
+
+	log.Println("Scenario matched (promise)",
+		"chat_id", msg.ChatID,
+		"confidence", result.Confidence,
+		"reason", result.Reason)
+
+	if result.Reminder == nil || strings.TrimSpace(result.Reminder.Title) == "" ||
+		strings.TrimSpace(result.Reminder.DateTime) == "" {
+		log.Printf("[CHAT-UPDATES] AI matched but reminder fields missing, chat_id=%d", msg.ChatID)
+		return
+	}
+
+	at, err := ai.ParseReminderDateTime(result.Reminder.DateTime)
+	if err != nil {
+		log.Printf("[CHAT-UPDATES] Bad reminder datetime from AI %q: %v", result.Reminder.DateTime, err)
+		return
+	}
+
+	var endAt time.Time
+	if et := strings.TrimSpace(result.Reminder.EndDateTime); et != "" {
+		endAt, err = ai.ParseReminderDateTime(et)
+		if err != nil {
+			log.Printf("[CHAT-UPDATES] Bad reminder end_datetime from AI %q: %v", et, err)
+			endAt = time.Time{}
+		}
+	}
+
+	scenarioID := strings.TrimSpace(result.ScenarioID)
+	if scenarioID == "" || !scenarioInList(scenarioID, scenarios) {
+		log.Printf("[CHAT-UPDATES] invalid or missing scenario_id from AI: %q", result.ScenarioID)
+		return
+	}
+
+	if c.userActionProducer == nil || !c.userActionProducer.IsReady() {
+		log.Printf("[CHAT-UPDATES] UserAction producer not available, skip reminder send")
+		return
+	}
+
+	desc := result.Reminder.Description
+	if strings.TrimSpace(desc) == "" {
+		desc = result.Reason
+	}
+
+	if err := c.userActionProducer.SendReminder(
+		msg.SessionID,
+		msg.UserID,
+		scenarioID,
+		msg.ChatID,
+		strings.TrimSpace(result.Reminder.Title),
+		strings.TrimSpace(desc),
+		at,
+		endAt,
+	); err != nil {
+		log.Printf("[CHAT-UPDATES] Failed to send reminder to user-actions: %v", err)
+		return
+	}
+
+	log.Printf("[CHAT-UPDATES] Reminder queued for user-actions: %q scenario_id=%s start=%s",
+		result.Reminder.Title, scenarioID, at.Format(time.RFC3339))
+}
+
+func scenarioInList(id string, list []storage.ScenarioForAI) bool {
+	for _, s := range list {
+		if s.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *ChatUpdatesConsumer) logMessage(msg *ConversationMessage) {

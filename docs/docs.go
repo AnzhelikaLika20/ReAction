@@ -919,7 +919,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/webcal/{phoneBase64}/{signature}/calendar.ics": {
+        "/webcal/{userIdBase64}/{signature}/calendar.ics": {
             "get": {
                 "description": "Путь: base64(user_id UUID) и HMAC-подпись для проверки.",
                 "produces": [
@@ -932,14 +932,14 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Идентификатор пользователя (UUID) в base64url",
-                        "name": "phoneBase64",
+                        "description": "UUID пользователя в base64url (как в ссылке из /calendar/url)",
+                        "name": "userIdBase64",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "HMAC-SHA256 подпись от идентификатора",
+                        "description": "HMAC-SHA256 подпись от UUID (hex)",
                         "name": "signature",
                         "in": "path",
                         "required": true
@@ -954,6 +954,15 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Неверная подпись",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка загрузки напоминаний",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {

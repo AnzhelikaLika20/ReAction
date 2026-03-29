@@ -28,7 +28,7 @@ type UserActionHandler func(action *UserActionEvent) error
 func NewUserActionConsumer(cfg config.KafkaConfig) (*UserActionConsumer, error) {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:        []string{cfg.Broker},
-		Topic:          "user-actions",
+		Topic:          cfg.UserActionsTopic,
 		GroupID:        fmt.Sprintf("%s-user-action-processor", cfg.GroupID),
 		MinBytes:       10e3,
 		MaxBytes:       10e6,
@@ -40,12 +40,18 @@ func NewUserActionConsumer(cfg config.KafkaConfig) (*UserActionConsumer, error) 
 	c := &UserActionConsumer{
 		reader:   reader,
 		config:   cfg,
-		topic:    "user-actions",
+		topic:    cfg.UserActionsTopic,
 		handlers: make([]UserActionHandler, 0),
 	}
 
 	log.Println("[USER-ACTIONS] UserAction consumer created")
 	return c, nil
+}
+
+func (c *UserActionConsumer) RegisterHandler(h UserActionHandler) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.handlers = append(c.handlers, h)
 }
 
 func (c *UserActionConsumer) Start(ctx context.Context) error {

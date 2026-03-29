@@ -777,16 +777,16 @@ paths:
       summary: Аккаунты мессенджеров пользователя
       tags:
       - users
-  /webcal/{phoneBase64}/{signature}/calendar.ics:
+  /webcal/{userIdBase64}/{signature}/calendar.ics:
     get:
       description: 'Путь: base64(user_id UUID) и HMAC-подпись для проверки.'
       parameters:
-      - description: Идентификатор пользователя (UUID) в base64url
+      - description: UUID пользователя в base64url (как в ссылке из /calendar/url)
         in: path
-        name: phoneBase64
+        name: userIdBase64
         required: true
         type: string
-      - description: HMAC-SHA256 подпись от идентификатора
+      - description: HMAC-SHA256 подпись от UUID (hex)
         in: path
         name: signature
         required: true
@@ -800,6 +800,12 @@ paths:
             type: string
         "400":
           description: Неверная подпись
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Ошибка загрузки напоминаний
           schema:
             additionalProperties:
               type: string

@@ -49,6 +49,7 @@ func main() {
 	sessionRepo := storage.NewSessionRepository(dbStorage.Queries)
 	messengerRepo := storage.NewMessengerAccountRepository(dbStorage.Queries)
 	scenarioRepo := storage.NewScenarioRepository(dbStorage.Queries)
+	reminderRepo := storage.NewReminderRepository(dbStorage.Queries)
 	chatRepo := storage.NewChatRepository(dbStorage.Queries)
 
 	jwtService := auth.NewJWTService(
@@ -69,7 +70,7 @@ func main() {
 	)
 
 	scenarioService := scenarios.NewScenarioService(scenarioRepo)
-	remindersService := reminders.NewRemindersService(cfg.JWT.SecretKey)
+	remindersService := reminders.NewRemindersService(cfg.JWT.SecretKey, reminderRepo)
 
 	userActionsProducer, err := user_actions.NewUserActionProducer(cfg.Kafka)
 	if err != nil {
@@ -87,6 +88,7 @@ func main() {
 	if err != nil {
 		log.Panicf("[KAFKA] Failed to create Kafka consumer: %v", err)
 	}
+	userActionsConsumer.RegisterHandler(user_actions.NewSaveReminderToDBHandler(reminderRepo, scenarioRepo))
 	defer userActionsConsumer.Stop()
 
 	aiService, err := ai.NewYandexGPTService(cfg)
@@ -94,7 +96,7 @@ func main() {
 		log.Fatal("Failed to create AI service", "error", err)
 	}
 
-	chatUpdatesConsumer, err := chat_updates.NewChatUpdatesConsumer(cfg.Kafka, userActionsProducer, aiService)
+	chatUpdatesConsumer, err := chat_updates.NewChatUpdatesConsumer(cfg.Kafka, userActionsProducer, aiService, scenarioRepo)
 	if err != nil {
 		log.Panic("[KAFKA] Failed to create Kafka consumer: %v", err)
 	}

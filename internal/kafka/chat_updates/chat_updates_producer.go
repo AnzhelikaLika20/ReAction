@@ -2,11 +2,11 @@ package chat_updates
 
 import (
 	"ReAction/internal/config"
+	"ReAction/internal/kafka/partitionkey"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
-	"strconv"
 	"sync"
 	"time"
 
@@ -73,7 +73,7 @@ func (p *ChatUpdatesProducer) getWriter(topic string) *kafka.Writer {
 	return writer
 }
 
-func (p *ChatUpdatesProducer) SendMessage(topic string, key int64, value interface{}) error {
+func (p *ChatUpdatesProducer) SendMessage(topic string, key []byte, value interface{}) error {
 	if !p.isReady {
 		return fmt.Errorf("producer is not ready")
 	}
@@ -88,7 +88,7 @@ func (p *ChatUpdatesProducer) SendMessage(topic string, key int64, value interfa
 	defer cancel()
 
 	msg := kafka.Message{
-		Key:   []byte(strconv.FormatInt(key, 10)),
+		Key:   key,
 		Value: jsonData,
 		Time:  time.Now(),
 	}
@@ -97,7 +97,8 @@ func (p *ChatUpdatesProducer) SendMessage(topic string, key int64, value interfa
 }
 
 func (p *ChatUpdatesProducer) SendTelegramMessage(message ChatUpdateMessageEvent) error {
-	return p.SendMessage(p.config.ChatUpdatesTopic, message.ChatID, message)
+	k := partitionkey.UserChatBytes(message.UserID, message.ChatID)
+	return p.SendMessage(p.config.ChatUpdatesTopic, k, message)
 }
 
 func (p *ChatUpdatesProducer) Close() error {

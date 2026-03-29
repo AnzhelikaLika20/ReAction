@@ -9,10 +9,13 @@ SET selected_chat_ids = $3,
 WHERE id = $1 AND user_id = $2;
 
 -- name: AddChatToMessengerAccount :exec
-UPDATE user_messenger_accounts
-SET selected_chat_ids = array_append(selected_chat_ids, $3),
+UPDATE user_messenger_accounts AS u
+SET selected_chat_ids = CASE
+    WHEN sqlc.arg(chat_id)::bigint = ANY (COALESCE(u.selected_chat_ids, '{}')) THEN u.selected_chat_ids
+    ELSE array_append(u.selected_chat_ids, sqlc.arg(chat_id)::bigint)
+END,
     updated_at = NOW()
-WHERE id = $1 AND user_id = $2;
+WHERE u.id = sqlc.arg(id) AND u.user_id = sqlc.arg(user_id);
 
 -- name: RemoveChatFromMessengerAccount :exec
 UPDATE user_messenger_accounts
