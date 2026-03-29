@@ -25,19 +25,20 @@ type ChatDTO struct {
 }
 
 type UpdateChatSelectionRequest struct {
-	ChatIDs []int64 `json:"chat_ids" binding:"required"`
+	MessengerAccountID string  `json:"messenger_account_id"`
+	ChatIDs            []int64 `json:"chat_ids" binding:"required"`
 }
 
-func (s *ChatService) GetSelectedChats(ctx context.Context, userID string) ([]int64, error) {
-	return s.chatRepo.GetSelectedChats(ctx, userID)
+func (s *ChatService) GetSelectedChats(ctx context.Context, userID, messengerAccountID string) ([]int64, error) {
+	return s.chatRepo.GetSelectedChats(ctx, userID, messengerAccountID)
 }
 
-func (s *ChatService) UpdateSelectedChats(ctx context.Context, userID string, chatIDs []int64) error {
-	return s.chatRepo.UpdateSelectedChats(ctx, userID, chatIDs)
+func (s *ChatService) UpdateSelectedChats(ctx context.Context, userID, messengerAccountID string, chatIDs []int64) error {
+	return s.chatRepo.UpdateSelectedChats(ctx, userID, messengerAccountID, chatIDs)
 }
 
-func (s *ChatService) IsChatAllowed(ctx context.Context, userID string, chatID int64) (bool, error) {
-	selectedChats, err := s.GetSelectedChats(ctx, userID)
+func (s *ChatService) IsChatAllowed(ctx context.Context, userID, messengerAccountID string, chatID int64) (bool, error) {
+	selectedChats, err := s.GetSelectedChats(ctx, userID, messengerAccountID)
 	if err != nil {
 		return false, fmt.Errorf("failed to get selected chats: %w", err)
 	}
@@ -53,4 +54,8 @@ func (s *ChatService) IsChatAllowed(ctx context.Context, userID string, chatID i
 	}
 
 	return false, nil
+}
+
+func (s *ChatService) IsChatSelected(ctx context.Context, userID, messengerAccountID string, chatID int64) (bool, error) {
+	return s.chatRepo.IsChatSelected(ctx, userID, messengerAccountID, chatID)
 }

@@ -5,8 +5,94 @@
 package db
 
 import (
+	"database/sql/driver"
+	"fmt"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type MessengerConnectionStatus string
+
+const (
+	MessengerConnectionStatusPending   MessengerConnectionStatus = "pending"
+	MessengerConnectionStatusConnected MessengerConnectionStatus = "connected"
+)
+
+func (e *MessengerConnectionStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = MessengerConnectionStatus(s)
+	case string:
+		*e = MessengerConnectionStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for MessengerConnectionStatus: %T", src)
+	}
+	return nil
+}
+
+type NullMessengerConnectionStatus struct {
+	MessengerConnectionStatus MessengerConnectionStatus
+	Valid                     bool // Valid is true if MessengerConnectionStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullMessengerConnectionStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.MessengerConnectionStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.MessengerConnectionStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullMessengerConnectionStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.MessengerConnectionStatus), nil
+}
+
+type MessengerProvider string
+
+const (
+	MessengerProviderTelegram MessengerProvider = "telegram"
+)
+
+func (e *MessengerProvider) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = MessengerProvider(s)
+	case string:
+		*e = MessengerProvider(s)
+	default:
+		return fmt.Errorf("unsupported scan type for MessengerProvider: %T", src)
+	}
+	return nil
+}
+
+type NullMessengerProvider struct {
+	MessengerProvider MessengerProvider
+	Valid             bool // Valid is true if MessengerProvider is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullMessengerProvider) Scan(value interface{}) error {
+	if value == nil {
+		ns.MessengerProvider, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.MessengerProvider.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullMessengerProvider) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.MessengerProvider), nil
+}
 
 type Scenario struct {
 	ID          pgtype.UUID
@@ -27,12 +113,22 @@ type Session struct {
 }
 
 type User struct {
-	PhoneNumber  pgtype.Text
 	IsActive     pgtype.Bool
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
-	Chats        []int64
 	ID           pgtype.UUID
-	Email        pgtype.Text
+	Email        string
 	PasswordHash pgtype.Text
+}
+
+type UserMessengerAccount struct {
+	ID               pgtype.UUID
+	UserID           pgtype.UUID
+	Provider         MessengerProvider
+	Label            pgtype.Text
+	ConnectionStatus MessengerConnectionStatus
+	SelectedChatIds  []int64
+	ConnectedAt      pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
 }

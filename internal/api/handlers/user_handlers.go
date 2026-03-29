@@ -40,14 +40,48 @@ func GetMe(authService *auth.AuthService) gin.HandlerFunc {
 			return
 		}
 
+		phone, err := authService.TelegramDisplayPhone(c.Request.Context(), userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+			return
+		}
+
 		c.JSON(http.StatusOK, MeResponse{
 			ID:          u.ID,
 			Email:       u.Email,
-			PhoneNumber: u.PhoneNumber,
+			PhoneNumber: phone,
 		})
+	}
+}
+
+// @Summary Аккаунты мессенджеров пользователя
+// @Description Список подключённых и ожидающих аккаунтов; is_active_for_session — этот аккаунт сейчас в активном tdlib-клиенте для данного JWT session_id.
+// @Tags users
+// @Produce json
+// @Security Bearer
+// @Success 200 {array} auth.MessengerAccountItem
+// @Failure 401 {object} ErrorResponse
+// @Router /users/me/messenger-accounts [get]
+func ListMessengerAccounts(authService *auth.AuthService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetString("user_id")
+		sessionID := c.GetString("session_id")
+		if userID == "" {
+			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Не авторизован"})
+			return
+		}
+
+		list, err := authService.ListMessengerAccounts(c.Request.Context(), userID, sessionID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, list)
 	}
 }
 
 func RegisterUserRoutes(router *gin.Engine, authService *auth.AuthService) {
 	router.GET("/users/me", GetMe(authService))
+	router.GET("/users/me/messenger-accounts", ListMessengerAccounts(authService))
 }

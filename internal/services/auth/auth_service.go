@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"ReAction/internal/config"
@@ -14,6 +15,7 @@ import (
 	"ReAction/internal/telegram"
 
 	"github.com/Arman92/go-tdlib"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -21,28 +23,41 @@ import (
 var ErrInvalidCredentials = errors.New("invalid email or password")
 var ErrEmailTaken = errors.New("email already registered")
 var ErrTelegramNotConnected = errors.New("telegram client not initialized; connect Telegram first")
+var ErrNoMessengerForSession = errors.New("no messenger account linked to this session")
+var ErrMessengerNotOwned = errors.New("messenger account not found")
+
+type MessengerAccountItem struct {
+	ID                 string `json:"id"`
+	Provider           string `json:"provider"`
+	Label              string `json:"label,omitempty"`
+	ConnectionStatus   string `json:"connection_status"`
+	IsActiveForSession bool   `json:"is_active_for_session"`
+}
 
 type AuthService struct {
-	jwtService  *JWTService
-	userRepo    *storage.UserRepository
-	sessionRepo *storage.SessionRepository
-	authManager *telegram.AuthStateManager
-	chatService *chats.ChatService
+	jwtService    *JWTService
+	userRepo      *storage.UserRepository
+	sessionRepo   *storage.SessionRepository
+	messengerRepo *storage.MessengerAccountRepository
+	authManager   *telegram.AuthStateManager
+	chatService   *chats.ChatService
 }
 
 func NewAuthService(
 	jwtService *JWTService,
 	userRepo *storage.UserRepository,
 	sessionRepo *storage.SessionRepository,
+	messengerRepo *storage.MessengerAccountRepository,
 	authManager *telegram.AuthStateManager,
 	chatService *chats.ChatService,
 ) *AuthService {
 	return &AuthService{
-		jwtService:  jwtService,
-		userRepo:    userRepo,
-		sessionRepo: sessionRepo,
-		authManager: authManager,
-		chatService: chatService,
+		jwtService:    jwtService,
+		userRepo:      userRepo,
+		sessionRepo:   sessionRepo,
+		messengerRepo: messengerRepo,
+		authManager:   authManager,
+		chatService:   chatService,
 	}
 }
 
@@ -51,7 +66,7 @@ func (s *AuthService) issueToken(ctx context.Context, u *storage.User) (string, 
 		return "", errors.New("user is inactive")
 	}
 	_ = s.userRepo.UpdateLastAuth(ctx, u.ID)
-	return s.jwtService.GenerateToken(u.ID, u.Email, u.PhoneNumber)
+	return s.jwtService.GenerateToken(u.ID, u.Email)
 }
 
 func (s *AuthService) Register(ctx context.Context, email, password string) (string, error) {
@@ -136,9 +151,83 @@ func (s *AuthService) SetPassword(ctx context.Context, sessionID, password strin
 	return string(state.GetAuthorizationStateEnum()), nil
 }
 
-func (s *AuthService) CreateTdlibClient(ctx context.Context, sessionID, appUserID string, cfg config.TelegramConfig, producer *chat_updates.ChatUpdatesProducer) {
+func (s *AuthService) EnsureMessengerAccountForTelegramInit(ctx context.Context, sessionID, appUserID string) (string, error) {
+	if c := s.authManager.GetClientBySessionId(sessionID); c != nil && c.MessengerAccountID != "" {
+		return c.MessengerAccountID, nil
+	}
+	mid, err := s.messengerRepo.GetLatestPendingTelegramAccountID(ctx, appUserID)
+	if err == nil {
+		return mid, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", err
+	}
+	return s.messengerRepo.InsertPendingTelegram(ctx, appUserID)
+}
+
+func (s *AuthService) MessengerAccountIDForJWTSession(ctx context.Context, sessionID, userID string) (string, error) {
+	_ = userID
+	if c := s.authManager.GetClientBySessionId(sessionID); c != nil && c.MessengerAccountID != "" {
+		return c.MessengerAccountID, nil
+	}
+	return "", ErrNoMessengerForSession
+}
+
+func (s *AuthService) ResolveChatMessengerID(ctx context.Context, jwtSessionID, userID, requested string) (string, error) {
+	req := strings.TrimSpace(requested)
+	if req == "" {
+		return s.MessengerAccountIDForJWTSession(ctx, jwtSessionID, userID)
+	}
+	if err := s.messengerRepo.EnsureMessengerOwnedByUser(ctx, req, userID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrMessengerNotOwned
+		}
+		return "", err
+	}
+	return req, nil
+}
+
+func (s *AuthService) ListMessengerAccounts(ctx context.Context, userID, jwtSessionID string) ([]MessengerAccountItem, error) {
+	rows, err := s.messengerRepo.ListByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	activeClientID := ""
+	if c := s.authManager.GetClientBySessionId(jwtSessionID); c != nil && c.MessengerAccountID != "" {
+		activeClientID = c.MessengerAccountID
+	}
+	out := make([]MessengerAccountItem, 0, len(rows))
+	for _, row := range rows {
+		label := ""
+		if row.Label.Valid {
+			label = row.Label.String
+		}
+		rid := storage.UUIDToString(row.ID)
+		out = append(out, MessengerAccountItem{
+			ID:                 rid,
+			Provider:           string(row.Provider),
+			Label:              label,
+			ConnectionStatus:   string(row.ConnectionStatus),
+			IsActiveForSession: activeClientID != "" && rid == activeClientID,
+		})
+	}
+	return out, nil
+}
+
+func (s *AuthService) TelegramDisplayPhone(ctx context.Context, userID string) (string, error) {
+	phone, err := s.messengerRepo.LatestConnectedTelegramLabel(ctx, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return phone, nil
+}
+
+func (s *AuthService) CreateTdlibClient(ctx context.Context, sessionID, appUserID, messengerAccountID string, cfg config.TelegramConfig, producer *chat_updates.ChatUpdatesProducer) {
 	go func() {
-		client, err := telegram.NewClientWithHTTPAuth(sessionID, appUserID, cfg, s.authManager, s.chatService, producer)
+		client, err := telegram.NewClientWithHTTPAuth(sessionID, appUserID, messengerAccountID, cfg, s.authManager, s.chatService, producer)
 		if err != nil {
 			log.Printf("[TELEGRAM] ERROR: Failed to create Telegram client for session %s: %v", sessionID, err)
 			return
@@ -152,10 +241,17 @@ func (s *AuthService) CreateTdlibClient(ctx context.Context, sessionID, appUserI
 			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
 
+			mid := client.MessengerAccountID
+			if mid != "" {
+				if err := s.messengerRepo.MarkTelegramConnected(ctx, mid, appUserID); err != nil {
+					log.Printf("[AUTH] ERROR marking messenger account connected: %v", err)
+				}
+			}
+
 			tgPhone := client.TelegramPhoneNumber()
-			if tgPhone != "" {
-				if err := s.userRepo.UpdateTelegramPhone(ctx, appUserID, tgPhone); err != nil {
-					log.Printf("[AUTH] ERROR updating telegram phone: %v", err)
+			if tgPhone != "" && mid != "" {
+				if err := s.messengerRepo.SetTelegramPhoneLabel(ctx, mid, appUserID, tgPhone); err != nil {
+					log.Printf("[AUTH] ERROR saving telegram phone to messenger label: %v", err)
 				}
 			}
 

@@ -10,10 +10,9 @@ import (
 )
 
 type Claims struct {
-	UserID      string `json:"user_id"`
-	SessionID   string `json:"session_id"`
-	Email       string `json:"email,omitempty"`
-	PhoneNumber string `json:"phone_number,omitempty"`
+	UserID    string `json:"user_id"`
+	SessionID string `json:"session_id"`
+	Email     string `json:"email,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -32,16 +31,15 @@ func NewJWTService(
 	}
 }
 
-func (s *JWTService) GenerateToken(userID, email, phoneNumber string) (string, error) {
+func (s *JWTService) GenerateToken(userID, email string) (string, error) {
 	sessionID, err := uuid.NewRandom()
 	if err != nil {
 		return "", err
 	}
 	claims := &Claims{
-		UserID:      userID,
-		SessionID:   sessionID.String(),
-		Email:       email,
-		PhoneNumber: phoneNumber,
+		UserID:    userID,
+		SessionID: sessionID.String(),
+		Email:     email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.tokenDuration)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

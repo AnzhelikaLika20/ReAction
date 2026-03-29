@@ -1,26 +1,27 @@
--- name: GetUserChats :one
-SELECT chats FROM users WHERE id = $1;
+-- name: GetMessengerAccountSelectedChats :one
+SELECT selected_chat_ids FROM user_messenger_accounts
+WHERE id = $1 AND user_id = $2;
 
--- name: UpdateUserChats :exec
-UPDATE users 
-SET chats = $2, 
-    updated_at = NOW() 
-WHERE id = $1;
-
--- name: AddChatToUser :exec
-UPDATE users 
-SET chats = array_append(chats, $2),
+-- name: UpdateMessengerAccountSelectedChats :exec
+UPDATE user_messenger_accounts
+SET selected_chat_ids = $3,
     updated_at = NOW()
-WHERE id = $1;
+WHERE id = $1 AND user_id = $2;
 
--- name: RemoveChatFromUser :exec
-UPDATE users 
-SET chats = array_remove(chats, $2),
+-- name: AddChatToMessengerAccount :exec
+UPDATE user_messenger_accounts
+SET selected_chat_ids = array_append(selected_chat_ids, $3),
     updated_at = NOW()
-WHERE id = $1;
+WHERE id = $1 AND user_id = $2;
 
--- name: ClearUserChats :exec
-UPDATE users 
-SET chats = '{}',
+-- name: RemoveChatFromMessengerAccount :exec
+UPDATE user_messenger_accounts
+SET selected_chat_ids = array_remove(selected_chat_ids, $3),
     updated_at = NOW()
-WHERE id = $1;
+WHERE id = $1 AND user_id = $2;
+
+-- name: ClearMessengerAccountChats :exec
+UPDATE user_messenger_accounts
+SET selected_chat_ids = '{}',
+    updated_at = NOW()
+WHERE id = $1 AND user_id = $2;

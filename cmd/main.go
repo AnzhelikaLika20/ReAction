@@ -47,6 +47,7 @@ func main() {
 
 	userRepo := storage.NewUserRepository(dbStorage.Queries)
 	sessionRepo := storage.NewSessionRepository(dbStorage.Queries)
+	messengerRepo := storage.NewMessengerAccountRepository(dbStorage.Queries)
 	scenarioRepo := storage.NewScenarioRepository(dbStorage.Queries)
 	chatRepo := storage.NewChatRepository(dbStorage.Queries)
 
@@ -62,6 +63,7 @@ func main() {
 		jwtService,
 		userRepo,
 		sessionRepo,
+		messengerRepo,
 		authManager,
 		chatService,
 	)

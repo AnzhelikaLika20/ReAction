@@ -412,7 +412,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Возвращает список чатов Telegram с информацией о выборе",
+                "description": "Возвращает список чатов Telegram с информацией о выборе. Только для аккаунта, привязанного к текущей JWT-сессии (query messenger_account_id должен совпадать или быть пустым).",
                 "produces": [
                     "application/json"
                 ],
@@ -420,6 +420,14 @@ const docTemplate = `{
                     "chats"
                 ],
                 "summary": "Получить список чатов пользователя",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID аккаунта мессенджера",
+                        "name": "messenger_account_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -452,7 +460,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Возвращает список ID выбранных чатов",
+                "description": "Возвращает список ID выбранных чатов для аккаунта (query messenger_account_id).",
                 "produces": [
                     "application/json"
                 ],
@@ -460,6 +468,14 @@ const docTemplate = `{
                     "chats"
                 ],
                 "summary": "Получить выбранные чаты",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID аккаунта мессенджера",
+                        "name": "messenger_account_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -496,7 +512,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Сохраняет список выбранных чатов для анализа",
+                "description": "Сохраняет список выбранных чатов для указанного аккаунта мессенджера (messenger_account_id в теле; если пусто — аккаунт текущей сессии).",
                 "consumes": [
                     "application/json"
                 ],
@@ -869,6 +885,40 @@ const docTemplate = `{
                 }
             }
         },
+        "/users/me/messenger-accounts": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Список подключённых и ожидающих аккаунтов; is_active_for_session — этот аккаунт сейчас в активном tdlib-клиенте для данного JWT session_id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Аккаунты мессенджеров пользователя",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/auth.MessengerAccountItem"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/webcal/{phoneBase64}/{signature}/calendar.ics": {
             "get": {
                 "description": "Путь: base64(user_id UUID) и HMAC-подпись для проверки.",
@@ -916,6 +966,26 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "auth.MessengerAccountItem": {
+            "type": "object",
+            "properties": {
+                "connection_status": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active_for_session": {
+                    "type": "boolean"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                }
+            }
+        },
         "chats.ChatDTO": {
             "type": "object",
             "properties": {
@@ -944,6 +1014,9 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                },
+                "messenger_account_id": {
+                    "type": "string"
                 }
             }
         },

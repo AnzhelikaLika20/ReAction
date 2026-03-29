@@ -22,29 +22,20 @@ func NewUserRepository(queries *db.Queries) *UserRepository {
 }
 
 type User struct {
-	ID          string    `json:"id"`
-	Email       string    `json:"email,omitempty"`
-	PhoneNumber string    `json:"phone_number,omitempty"`
-	IsActive    bool      `json:"is_active"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID        string    `json:"id"`
+	Email     string    `json:"email,omitempty"`
+	IsActive  bool      `json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
-func textString(t pgtype.Text) string {
-	if !t.Valid {
-		return ""
-	}
-	return t.String
-}
-
-func rowToUser(id pgtype.UUID, email, phone pgtype.Text, isActive pgtype.Bool, createdAt, updatedAt pgtype.Timestamptz) *User {
+func rowToUser(id pgtype.UUID, email string, isActive pgtype.Bool, createdAt, updatedAt pgtype.Timestamptz) *User {
 	return &User{
-		ID:          UUIDToString(id),
-		Email:       textString(email),
-		PhoneNumber: textString(phone),
-		IsActive:    isActive.Bool,
-		CreatedAt:   createdAt.Time,
-		UpdatedAt:   updatedAt.Time,
+		ID:        UUIDToString(id),
+		Email:     email,
+		IsActive:  isActive.Bool,
+		CreatedAt: createdAt.Time,
+		UpdatedAt: updatedAt.Time,
 	}
 }
 
@@ -56,15 +47,7 @@ func (r *UserRepository) CreateUserWithCredentials(ctx context.Context, email, p
 	if err != nil {
 		return nil, err
 	}
-	return rowToUser(row.ID, row.Email, row.PhoneNumber, row.IsActive, row.CreatedAt, row.UpdatedAt), nil
-}
-
-func (r *UserRepository) CreateUserWithPhone(ctx context.Context, phoneNumber string) (*User, error) {
-	row, err := r.queries.CreateUserWithPhone(ctx, pgtype.Text{String: phoneNumber, Valid: true})
-	if err != nil {
-		return nil, err
-	}
-	return rowToUser(row.ID, row.Email, row.PhoneNumber, row.IsActive, row.CreatedAt, row.UpdatedAt), nil
+	return rowToUser(row.ID, row.Email, row.IsActive, row.CreatedAt, row.UpdatedAt), nil
 }
 
 func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*User, string, error) {
@@ -75,23 +58,12 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*Use
 		}
 		return nil, "", err
 	}
-	u := rowToUser(row.ID, row.Email, row.PhoneNumber, row.IsActive, row.CreatedAt, row.UpdatedAt)
+	u := rowToUser(row.ID, row.Email, row.IsActive, row.CreatedAt, row.UpdatedAt)
 	hash := ""
 	if row.PasswordHash.Valid {
 		hash = row.PasswordHash.String
 	}
 	return u, hash, nil
-}
-
-func (r *UserRepository) GetUserByPhone(ctx context.Context, phoneNumber string) (*User, error) {
-	row, err := r.queries.GetUserByPhone(ctx, pgtype.Text{String: phoneNumber, Valid: true})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return rowToUser(row.ID, row.Email, row.PhoneNumber, row.IsActive, row.CreatedAt, row.UpdatedAt), nil
 }
 
 func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*User, error) {
@@ -106,19 +78,7 @@ func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*User, err
 		}
 		return nil, err
 	}
-	return rowToUser(row.ID, row.Email, row.PhoneNumber, row.IsActive, row.CreatedAt, row.UpdatedAt), nil
-}
-
-func (r *UserRepository) UpdateTelegramPhone(ctx context.Context, userID, telegramPhone string) error {
-	uid, err := ParseUUID(userID)
-	if err != nil {
-		return err
-	}
-	_, err = r.queries.UpdateUserTelegramPhone(ctx, db.UpdateUserTelegramPhoneParams{
-		ID:          uid,
-		PhoneNumber: pgtype.Text{String: telegramPhone, Valid: true},
-	})
-	return err
+	return rowToUser(row.ID, row.Email, row.IsActive, row.CreatedAt, row.UpdatedAt), nil
 }
 
 func (r *UserRepository) UpdateLastAuth(ctx context.Context, userID string) error {

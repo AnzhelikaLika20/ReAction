@@ -3,7 +3,6 @@ ALTER TABLE scenarios DROP CONSTRAINT IF EXISTS scenarios_phone_number_fkey;
 ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_phone_number_fkey;
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS id UUID DEFAULT gen_random_uuid();
-UPDATE users SET id = gen_random_uuid() WHERE id IS NULL;
 ALTER TABLE users ALTER COLUMN id SET NOT NULL;
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255);
@@ -22,14 +21,12 @@ ALTER TABLE users ADD CONSTRAINT users_login_identifier CHECK (
 );
 
 ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS user_id UUID;
-UPDATE scenarios s SET user_id = u.id FROM users u WHERE s.phone_number = u.phone_number;
 DELETE FROM scenarios WHERE user_id IS NULL;
 ALTER TABLE scenarios ALTER COLUMN user_id SET NOT NULL;
 ALTER TABLE scenarios ADD CONSTRAINT scenarios_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 ALTER TABLE scenarios DROP COLUMN IF EXISTS phone_number;
 
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_id UUID;
-UPDATE sessions s SET user_id = u.id FROM users u WHERE s.phone_number = u.phone_number;
 DELETE FROM sessions WHERE user_id IS NULL;
 ALTER TABLE sessions ALTER COLUMN user_id SET NOT NULL;
 ALTER TABLE sessions DROP COLUMN IF EXISTS phone_number;

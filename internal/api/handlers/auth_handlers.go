@@ -178,7 +178,14 @@ func (h *AuthHandlers) InitTelegramClient(c *gin.Context) {
 	sessionID := c.GetString("session_id")
 	userID := c.GetString("user_id")
 
-	h.authService.CreateTdlibClient(c.Request.Context(), sessionID, userID, h.cfg, h.kafkaProducer)
+	messengerAccountID, err := h.authService.EnsureMessengerAccountForTelegramInit(c.Request.Context(), sessionID, userID)
+	if err != nil {
+		log.Printf("[AUTH] EnsureMessengerAccountForTelegramInit: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to start messenger connection"})
+		return
+	}
+
+	h.authService.CreateTdlibClient(c.Request.Context(), sessionID, userID, messengerAccountID, h.cfg, h.kafkaProducer)
 
 	c.JSON(http.StatusOK, SessionResponse{
 		AuthState: "inited",

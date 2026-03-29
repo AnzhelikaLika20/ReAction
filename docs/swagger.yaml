@@ -1,4 +1,17 @@
 definitions:
+  auth.MessengerAccountItem:
+    properties:
+      connection_status:
+        type: string
+      id:
+        type: string
+      is_active_for_session:
+        type: boolean
+      label:
+        type: string
+      provider:
+        type: string
+    type: object
   chats.ChatDTO:
     properties:
       id:
@@ -16,6 +29,8 @@ definitions:
         items:
           type: integer
         type: array
+      messenger_account_id:
+        type: string
     required:
     - chat_ids
     type: object
@@ -433,7 +448,14 @@ paths:
       - calendar
   /chats:
     get:
-      description: Возвращает список чатов Telegram с информацией о выборе
+      description: Возвращает список чатов Telegram с информацией о выборе. Только
+        для аккаунта, привязанного к текущей JWT-сессии (query messenger_account_id
+        должен совпадать или быть пустым).
+      parameters:
+      - description: UUID аккаунта мессенджера
+        in: query
+        name: messenger_account_id
+        type: string
       produces:
       - application/json
       responses:
@@ -458,7 +480,12 @@ paths:
       - chats
   /chats/selected:
     get:
-      description: Возвращает список ID выбранных чатов
+      description: Возвращает список ID выбранных чатов для аккаунта (query messenger_account_id).
+      parameters:
+      - description: UUID аккаунта мессенджера
+        in: query
+        name: messenger_account_id
+        type: string
       produces:
       - application/json
       responses:
@@ -488,7 +515,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Сохраняет список выбранных чатов для анализа
+      description: Сохраняет список выбранных чатов для указанного аккаунта мессенджера
+        (messenger_account_id в теле; если пусто — аккаунт текущей сессии).
       parameters:
       - description: Список ID чатов
         in: body
@@ -725,6 +753,28 @@ paths:
       security:
       - Bearer: []
       summary: Текущий пользователь
+      tags:
+      - users
+  /users/me/messenger-accounts:
+    get:
+      description: Список подключённых и ожидающих аккаунтов; is_active_for_session
+        — этот аккаунт сейчас в активном tdlib-клиенте для данного JWT session_id.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/auth.MessengerAccountItem'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Аккаунты мессенджеров пользователя
       tags:
       - users
   /webcal/{phoneBase64}/{signature}/calendar.ics:

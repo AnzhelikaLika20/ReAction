@@ -15,18 +15,19 @@ import (
 )
 
 type Client struct {
-	tdlibClient       *tdlib.Client
-	authState         string
-	listener          *Listener
-	config            config.TelegramConfig
-	mu                sync.RWMutex
-	authSessionID     string
-	ctx               context.Context
-	cancelFunc        context.CancelFunc
-	authReady         chan struct{}
-	UpdatedAt         time.Time
-	telegramPhone     string
-	telegramPhoneLock sync.RWMutex
+	tdlibClient        *tdlib.Client
+	authState          string
+	listener           *Listener
+	config             config.TelegramConfig
+	mu                 sync.RWMutex
+	authSessionID      string
+	ctx                context.Context
+	cancelFunc         context.CancelFunc
+	authReady          chan struct{}
+	UpdatedAt          time.Time
+	telegramPhone      string
+	telegramPhoneLock  sync.RWMutex
+	MessengerAccountID string
 }
 
 func (c *Client) SetTelegramPhoneNumber(phone string) {
@@ -41,7 +42,7 @@ func (c *Client) TelegramPhoneNumber() string {
 	return c.telegramPhone
 }
 
-func NewClientWithHTTPAuth(sessionID string, appUserID string, cfg config.TelegramConfig, authManager *AuthStateManager, chatService *chats.ChatService, kafkaProducer *chat_updates.ChatUpdatesProducer) (*Client, error) {
+func NewClientWithHTTPAuth(sessionID string, appUserID string, messengerAccountID string, cfg config.TelegramConfig, authManager *AuthStateManager, chatService *chats.ChatService, kafkaProducer *chat_updates.ChatUpdatesProducer) (*Client, error) {
 	tdlib.SetLogVerbosityLevel(int(cfg.LogLevel))
 
 	tdlibClient := tdlib.NewClient(tdlib.Config{
@@ -63,13 +64,14 @@ func NewClientWithHTTPAuth(sessionID string, appUserID string, cfg config.Telegr
 	ctx, cancel := context.WithCancel(context.Background())
 
 	client := &Client{
-		tdlibClient:   tdlibClient,
-		config:        cfg,
-		listener:      NewListener(tdlibClient, appUserID, chatService, kafkaProducer),
-		authSessionID: sessionID,
-		ctx:           ctx,
-		cancelFunc:    cancel,
-		authReady:     make(chan struct{}),
+		tdlibClient:        tdlibClient,
+		config:             cfg,
+		listener:           NewListener(tdlibClient, sessionID, appUserID, messengerAccountID, chatService, kafkaProducer),
+		authSessionID:      sessionID,
+		ctx:                ctx,
+		cancelFunc:         cancel,
+		authReady:          make(chan struct{}),
+		MessengerAccountID: messengerAccountID,
 	}
 
 	authManager.RegisterAuthorizer(sessionID, appUserID, client)
