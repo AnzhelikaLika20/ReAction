@@ -94,6 +94,18 @@ func (ns NullMessengerProvider) Value() (driver.Value, error) {
 	return string(ns.MessengerProvider), nil
 }
 
+type Reminder struct {
+	ID                  pgtype.UUID
+	ScenarioID          pgtype.UUID
+	ChatID              pgtype.Int8
+	Title               string
+	Description         pgtype.Text
+	StartsAt            pgtype.Timestamptz
+	EndsAt              pgtype.Timestamptz
+	NotifyBeforeMinutes int32
+	CreatedAt           pgtype.Timestamptz
+}
+
 type Scenario struct {
 	ID          pgtype.UUID
 	Title       string

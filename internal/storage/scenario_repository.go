@@ -124,6 +124,43 @@ func (r *ScenarioRepository) Create(ctx context.Context, params CreateScenarioPa
 	return &s, nil
 }
 
+type ScenarioForAI struct {
+	ID            string
+	Title         string
+	TriggerPhrase string
+}
+
+func (r *ScenarioRepository) ListActiveScenariosForAI(ctx context.Context, userID string) ([]ScenarioForAI, error) {
+	all, err := r.GetUserScenarios(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	var out []ScenarioForAI
+	for _, sc := range all {
+		if !sc.IsActive.Valid || !sc.IsActive.Bool {
+			continue
+		}
+		var cond map[string]interface{}
+		if err := json.Unmarshal(sc.Conditions, &cond); err != nil {
+			continue
+		}
+		tp, _ := cond["trigger_phrase"].(string)
+		idStr := ""
+		if sc.ID.Valid {
+			idStr = uuid.UUID(sc.ID.Bytes).String()
+		}
+		if idStr == "" {
+			continue
+		}
+		out = append(out, ScenarioForAI{
+			ID:            idStr,
+			Title:         sc.Title,
+			TriggerPhrase: tp,
+		})
+	}
+	return out, nil
+}
+
 func (r *ScenarioRepository) GetByID(ctx context.Context, id, userID string) (db.Scenario, error) {
 	sid, err := uuid.Parse(id)
 	if err != nil {

@@ -2,11 +2,12 @@ package user_actions
 
 import (
 	"ReAction/internal/config"
+	"ReAction/internal/kafka/partitionkey"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
-	"strings"
+	"strconv"
 	"sync"
 	"time"
 
@@ -35,7 +36,7 @@ func NewUserActionProducer(cfg config.KafkaConfig) (*UserActionProducer, error) 
 		isReady: true,
 	}
 
-	p.getWriter(cfg.ChatUpdatesTopic)
+	p.getWriter(cfg.UserActionsTopic)
 
 	log.Println("[KAFKA] UserAction producer created and ready")
 	return p, nil
@@ -88,14 +89,14 @@ func (p *UserActionProducer) SendAction(action *UserActionEvent) error {
 		return fmt.Errorf("failed to marshal action: %w", err)
 	}
 
-	writer := p.getWriter("user-actions")
+	writer := p.getWriter(p.config.UserActionsTopic)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	key := fmt.Sprintf("%s-%d", action.SessionID, time.Now().Unix())
+	key := kafkaMessageKeyForAction(action)
 
 	msg := kafka.Message{
-		Key:   []byte(key),
+		Key:   key,
 		Value: jsonData,
 		Time:  time.Now(),
 	}
@@ -116,36 +117,40 @@ func (p *UserActionProducer) SendAction(action *UserActionEvent) error {
 	return nil
 }
 
-func (p *UserActionProducer) ParseAndSendReminderFromText(sessionID string, text string) (*UserActionEvent, error) {
-	if strings.Contains(strings.ToLower(text), "молоко") {
-		title := "Купить молоко"
-		description := fmt.Sprintf("Реакция на сообщение: \"%s\"", truncateText(text, 100))
-		date := time.Now().Add(24 * time.Hour).Truncate(time.Hour).Add(10 * time.Hour)
-
-		reminder := UserActionEvent{
-			SessionID: sessionID,
-			Reminder: &ReminderDetail{
-				ReminderID:  fmt.Sprintf("%d", time.Now().UnixNano()),
-				Title:       title,
-				Description: description,
-				Date:        date,
-				CreatedAt:   time.Now(),
-			},
-		}
-
-		p.SendAction(&reminder)
-
-		return &reminder, nil
+func kafkaMessageKeyForAction(action *UserActionEvent) []byte {
+	if action.ChatID != 0 {
+		return partitionkey.UserChatBytes(action.UserID, action.ChatID)
 	}
-
-	return nil, nil
+	if action.SessionID != "" {
+		return []byte(action.SessionID)
+	}
+	return []byte(strconv.FormatInt(time.Now().UnixNano(), 10))
 }
 
-func truncateText(text string, maxLength int) string {
-	if len(text) <= maxLength {
-		return text
+func (p *UserActionProducer) SendReminder(
+	sessionID, userID, scenarioID string,
+	chatID int64,
+	title, description string,
+	startAt, endAt time.Time,
+) error {
+	if endAt.IsZero() {
+		endAt = startAt.Add(time.Hour)
 	}
-	return text[:maxLength] + "..."
+	ev := &UserActionEvent{
+		SessionID:  sessionID,
+		UserID:     userID,
+		ScenarioID: scenarioID,
+		ChatID:     chatID,
+		Reminder: &ReminderDetail{
+			ReminderID:  fmt.Sprintf("%d", time.Now().UnixNano()),
+			Title:       title,
+			Description: description,
+			Date:        startAt,
+			EndDate:     endAt,
+			CreatedAt:   time.Now(),
+		},
+	}
+	return p.SendAction(ev)
 }
 
 func (p *UserActionProducer) Close() error {
