@@ -2,7 +2,10 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5"
 
 	db "ReAction/internal/storage/sqlc/gen"
 )
@@ -36,7 +39,13 @@ func (r *ChatRepository) GetSelectedChats(ctx context.Context, userID, messenger
 		UserID: uid,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return []int64{}, nil
+		}
 		return nil, fmt.Errorf("failed to get messenger selected chats: %w", err)
+	}
+	if chats == nil {
+		return []int64{}, nil
 	}
 	return chats, nil
 }
@@ -53,8 +62,24 @@ func (r *ChatRepository) UpdateSelectedChats(ctx context.Context, userID, messen
 	return r.q.UpdateMessengerAccountSelectedChats(ctx, db.UpdateMessengerAccountSelectedChatsParams{
 		ID:              mid,
 		UserID:          uid,
-		SelectedChatIds: chatIDs,
+		SelectedChatIds: dedupeInt64PreserveOrder(chatIDs),
 	})
+}
+
+func dedupeInt64PreserveOrder(in []int64) []int64 {
+	if len(in) == 0 {
+		return []int64{}
+	}
+	seen := make(map[int64]struct{}, len(in))
+	out := make([]int64, 0, len(in))
+	for _, v := range in {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
 }
 
 func (r *ChatRepository) AddChat(ctx context.Context, userID, messengerAccountID string, chatID int64) error {
@@ -67,9 +92,9 @@ func (r *ChatRepository) AddChat(ctx context.Context, userID, messengerAccountID
 		return err
 	}
 	return r.q.AddChatToMessengerAccount(ctx, db.AddChatToMessengerAccountParams{
-		ID:          mid,
-		UserID:      uid,
-		ArrayAppend: chatID,
+		ChatID: chatID,
+		ID:     mid,
+		UserID: uid,
 	})
 }
 

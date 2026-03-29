@@ -919,7 +919,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/webcal/{phoneBase64}/{signature}/calendar.ics": {
+        "/webcal/{userIdBase64}/{signature}/calendar.ics": {
             "get": {
                 "description": "Путь: base64(user_id UUID) и HMAC-подпись для проверки.",
                 "produces": [

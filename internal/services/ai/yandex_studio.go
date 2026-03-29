@@ -136,18 +136,18 @@ func (s *AIService) checkWithHistoryAndScenarios(
 Сценарии пользователя (JSON; id — UUID сценария, title — название, trigger_phrase — ключевая фраза/триггер):
 ` + string(raw) + `
 
-Если последнее сообщение по смыслу однозначно подходит под один из сценариев (учитывай trigger_phrase и title): detected=true, scenario_id = поле id этого сценария (строка), заполни reminder.
-Если ни один сценарий не подходит или выбор неоднозначен: detected=false, не указывай scenario_id и reminder.`
+Если последнее сообщение по смыслу однозначно подходит под один из сценариев (учитывай trigger_phrase и title): detected=true, scenario_id = поле id этого сценария (строка), заполни reminder осмысленными значениями.
+Если ни один сценарий не подходит или выбор неоднозначен: detected=false, scenario_id="" и все поля reminder — пустые строки "" (схема ответа требует эти ключи всегда).`
 	} else {
 		prompt += `
 
-Список сценариев в этом запросе пуст: поле scenario_id не включай.`
+Список сценариев в этом запросе пуст: всегда scenario_id="".`
 	}
 
 	prompt += `
 
 Если detected=true, заполни объект reminder: title — короткое название встречи или задачи; description — краткое описание (1–2 предложения); datetime — начало в ISO 8601 с часовым поясом; end_datetime — окончание в том же формате (если в тексте нет — задай разумную длительность, например +1 час от начала).
-Если detected=false — поля reminder и (при отсутствии подходящего сценария из списка) scenario_id не включай.`
+Если detected=false — scenario_id="" и reminder: title="", description="", datetime="", end_datetime="".`
 
 	systemMessage := Message{
 		Role: "system",
@@ -183,7 +183,7 @@ func (s *AIService) CheckMessageWithCustomContext(
 	customPrompt := fmt.Sprintf(`Ты анализируешь сообщения на наличие контекста: %s.
 Параметры анализа: %v.
 
-Поле scenario_id в ответе не заполняй.`,
+Поле scenario_id всегда присутствует в JSON: используй пустую строку "".`,
 		contextCheck.Description,
 		contextCheck.Parameters)
 
@@ -286,11 +286,11 @@ func classificationResultSchema() map[string]interface{} {
 			},
 			"scenario_id": map[string]interface{}{
 				"type":        "string",
-				"description": "UUID сценария из переданного в system списка; только при detected=true и если список сценариев был передан. Иначе опусти поле или пустая строка.",
+				"description": "UUID сценария из списка при detected=true; иначе пустая строка.",
 			},
 			"reminder": map[string]interface{}{
 				"type":        "object",
-				"description": "Только при detected=true: данные для напоминания.",
+				"description": "При detected=true — данные напоминания; при detected=false — все поля пустые строки.",
 				"properties": map[string]interface{}{
 					"title": map[string]interface{}{
 						"type":        "string",
@@ -309,10 +309,10 @@ func classificationResultSchema() map[string]interface{} {
 						"description": "Окончание события, ISO 8601 с оффсетом; при неизвестности — через 1 час после начала.",
 					},
 				},
-				"required": []string{"title", "description", "datetime"},
+				"required": []string{"title", "description", "datetime", "end_datetime"},
 			},
 		},
-		"required": []string{"detected"},
+		"required": []string{"detected", "confidence", "reason", "scenario_id", "reminder"},
 	}
 }
 

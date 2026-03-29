@@ -45,10 +45,10 @@ func GetCalendarURL(cfg config.ServerConfig, remindersService *reminders.Service
 // @Success 200 {string} string "iCalendar feed"
 // @Failure 400 {object} map[string]string "Неверная подпись"
 // @Failure 500 {object} map[string]string "Ошибка загрузки напоминаний"
-// @Router /webcal/{phoneBase64}/{signature}/calendar.ics [get]
+// @Router /webcal/{userIdBase64}/{signature}/calendar.ics [get]
 func GetCalendarBySignature(remindersService *reminders.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userIDBase64 := c.Param("phoneBase64")
+		userIDBase64 := c.Param("userIdBase64")
 		signature := c.Param("signature")
 		if userIDBase64 == "" || signature == "" {
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "userIdBase64 and signature are required"})
@@ -78,5 +78,5 @@ func GetCalendarBySignature(remindersService *reminders.Service) gin.HandlerFunc
 
 func RegisterCalendarRoutes(router *gin.Engine, cfg config.ServerConfig, remindersService *reminders.Service) {
 	router.GET("/calendar/url", GetCalendarURL(cfg, remindersService))
-	router.GET("/webcal/:phoneBase64/:signature/calendar.ics", GetCalendarBySignature(remindersService))
+	router.GET("/webcal/:userIdBase64/:signature/calendar.ics", GetCalendarBySignature(remindersService))
 }
