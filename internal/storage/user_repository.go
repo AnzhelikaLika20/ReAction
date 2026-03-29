@@ -2,9 +2,13 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"time"
 
-	"ReAction/internal/storage/sqlc/gen"
+	db "ReAction/internal/storage/sqlc/gen"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type UserRepository struct {
@@ -18,46 +22,69 @@ func NewUserRepository(queries *db.Queries) *UserRepository {
 }
 
 type User struct {
-	PhoneNumber string    `json:"phone_number"`
-	IsActive    bool      `json:"is_active"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID        string    `json:"id"`
+	Email     string    `json:"email,omitempty"`
+	IsActive  bool      `json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
-func (r *UserRepository) CreateUser(ctx context.Context, phoneNumber string) (*User, error) {
-	dbUser, err := r.queries.CreateUser(ctx, phoneNumber)
-	if err != nil {
-		return nil, err
-	}
-	return dbUserToUser(dbUser), nil
-}
-
-func (r *UserRepository) GetOrCreateUser(ctx context.Context, phoneNumber string) (*User, error) {
-	user, err := r.queries.GetUserByPhone(ctx, phoneNumber)
-	if err == nil {
-		return dbUserToUser(user), nil
-	}
-
-	return r.CreateUser(ctx, phoneNumber)
-}
-
-func (r *UserRepository) GetUserByPhone(ctx context.Context, phoneNumber string) (*User, error) {
-	dbUser, err := r.queries.GetUserByPhone(ctx, phoneNumber)
-	if err != nil {
-		return nil, err
-	}
-	return dbUserToUser(dbUser), nil
-}
-
-func (r *UserRepository) UpdateLastAuth(ctx context.Context, phoneNumber string) error {
-	return r.queries.UpdateUserLastAuth(ctx, phoneNumber)
-}
-
-func dbUserToUser(dbUser db.User) *User {
+func rowToUser(id pgtype.UUID, email string, isActive pgtype.Bool, createdAt, updatedAt pgtype.Timestamptz) *User {
 	return &User{
-		PhoneNumber: dbUser.PhoneNumber,
-		IsActive:    dbUser.IsActive.Bool,
-		CreatedAt:   dbUser.CreatedAt.Time,
-		UpdatedAt:   dbUser.UpdatedAt.Time,
+		ID:        UUIDToString(id),
+		Email:     email,
+		IsActive:  isActive.Bool,
+		CreatedAt: createdAt.Time,
+		UpdatedAt: updatedAt.Time,
 	}
+}
+
+func (r *UserRepository) CreateUserWithCredentials(ctx context.Context, email, passwordHash string) (*User, error) {
+	row, err := r.queries.CreateUserWithCredentials(ctx, db.CreateUserWithCredentialsParams{
+		Lower:        email,
+		PasswordHash: pgtype.Text{String: passwordHash, Valid: true},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return rowToUser(row.ID, row.Email, row.IsActive, row.CreatedAt, row.UpdatedAt), nil
+}
+
+func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*User, string, error) {
+	row, err := r.queries.GetUserByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, "", nil
+		}
+		return nil, "", err
+	}
+	u := rowToUser(row.ID, row.Email, row.IsActive, row.CreatedAt, row.UpdatedAt)
+	hash := ""
+	if row.PasswordHash.Valid {
+		hash = row.PasswordHash.String
+	}
+	return u, hash, nil
+}
+
+func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*User, error) {
+	uid, err := ParseUUID(id)
+	if err != nil {
+		return nil, err
+	}
+	row, err := r.queries.GetUserByID(ctx, uid)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return rowToUser(row.ID, row.Email, row.IsActive, row.CreatedAt, row.UpdatedAt), nil
+}
+
+func (r *UserRepository) UpdateLastAuth(ctx context.Context, userID string) error {
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return err
+	}
+	return r.queries.UpdateUserLastAuth(ctx, uid)
 }

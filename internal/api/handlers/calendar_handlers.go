@@ -15,7 +15,7 @@ type CalendarURLResponse struct {
 }
 
 // @Summary Получить URL подписки на календарь
-// @Description Возвращает URL с base64 телефона и подписью для проверки. Требуется Bearer.
+// @Description Возвращает URL с base64 идентификатора пользователя (UUID) и HMAC-подписью. Требуется Bearer.
 // @Tags calendar
 // @Security Bearer
 // @Produce json
@@ -24,23 +24,23 @@ type CalendarURLResponse struct {
 // @Router /calendar/url [get]
 func GetCalendarURL(cfg config.ServerConfig, remindersService *reminders.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		phone, exists := c.Get("phone_number")
-		if !exists {
+		owner, exists := c.Get("user_id")
+		if !exists || owner == nil || owner.(string) == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorResponse{Error: "Не авторизован"})
 			return
 		}
-		phoneStr, _ := phone.(string)
-		url := remindersService.BuildCalendarURL(phoneStr, cfg.BaseURL)
+		ownerStr := owner.(string)
+		url := remindersService.BuildCalendarURL(ownerStr, cfg.BaseURL)
 		c.JSON(http.StatusOK, CalendarURLResponse{URL: url})
 	}
 }
 
 // @Summary ICS фид календаря по подписанной ссылке
-// @Description Путь: base64(телефон) и HMAC-подпись для проверки.
+// @Description Путь: base64(user_id UUID) и HMAC-подпись для проверки.
 // @Tags calendar
 // @Produce text/calendar
-// @Param phoneBase64 path string true "Телефон в base64"
-// @Param signature path string true "HMAC-подпись от телефона"
+// @Param phoneBase64 path string true "Идентификатор пользователя (UUID) в base64url"
+// @Param signature path string true "HMAC-SHA256 подпись от идентификатора"
 // @Success 200 {string} string "iCalendar feed"
 // @Failure 400 {object} map[string]string "Неверная подпись"
 // @Router /webcal/{phoneBase64}/{signature}/calendar.ics [get]

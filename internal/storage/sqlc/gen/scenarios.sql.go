@@ -13,18 +13,18 @@ import (
 
 const createScenario = `-- name: CreateScenario :one
 INSERT INTO scenarios (
-    phone_number,
+    user_id,
     title,
     description,
     conditions,
     params,
     is_active
 ) VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, phone_number, title, description, conditions, params, is_active, created_at, updated_at
+RETURNING id, user_id, title, description, conditions, params, is_active, created_at, updated_at
 `
 
 type CreateScenarioParams struct {
-	PhoneNumber string
+	UserID      pgtype.UUID
 	Title       string
 	Description pgtype.Text
 	Conditions  []byte
@@ -32,19 +32,31 @@ type CreateScenarioParams struct {
 	IsActive    pgtype.Bool
 }
 
-func (q *Queries) CreateScenario(ctx context.Context, arg CreateScenarioParams) (Scenario, error) {
+type CreateScenarioRow struct {
+	ID          pgtype.UUID
+	UserID      pgtype.UUID
+	Title       string
+	Description pgtype.Text
+	Conditions  []byte
+	Params      []byte
+	IsActive    pgtype.Bool
+	CreatedAt   pgtype.Timestamp
+	UpdatedAt   pgtype.Timestamp
+}
+
+func (q *Queries) CreateScenario(ctx context.Context, arg CreateScenarioParams) (CreateScenarioRow, error) {
 	row := q.db.QueryRow(ctx, createScenario,
-		arg.PhoneNumber,
+		arg.UserID,
 		arg.Title,
 		arg.Description,
 		arg.Conditions,
 		arg.Params,
 		arg.IsActive,
 	)
-	var i Scenario
+	var i CreateScenarioRow
 	err := row.Scan(
 		&i.ID,
-		&i.PhoneNumber,
+		&i.UserID,
 		&i.Title,
 		&i.Description,
 		&i.Conditions,
@@ -58,35 +70,47 @@ func (q *Queries) CreateScenario(ctx context.Context, arg CreateScenarioParams) 
 
 const deleteScenario = `-- name: DeleteScenario :exec
 DELETE FROM scenarios 
-WHERE id = $1 AND phone_number = $2
+WHERE id = $1 AND user_id = $2
 `
 
 type DeleteScenarioParams struct {
-	ID          pgtype.UUID
-	PhoneNumber string
+	ID     pgtype.UUID
+	UserID pgtype.UUID
 }
 
 func (q *Queries) DeleteScenario(ctx context.Context, arg DeleteScenarioParams) error {
-	_, err := q.db.Exec(ctx, deleteScenario, arg.ID, arg.PhoneNumber)
+	_, err := q.db.Exec(ctx, deleteScenario, arg.ID, arg.UserID)
 	return err
 }
 
 const getScenarioByID = `-- name: GetScenarioByID :one
-SELECT id, phone_number, title, description, conditions, params, is_active, created_at, updated_at FROM scenarios 
-WHERE id = $1 AND phone_number = $2
+SELECT id, user_id, title, description, conditions, params, is_active, created_at, updated_at FROM scenarios 
+WHERE id = $1 AND user_id = $2
 `
 
 type GetScenarioByIDParams struct {
-	ID          pgtype.UUID
-	PhoneNumber string
+	ID     pgtype.UUID
+	UserID pgtype.UUID
 }
 
-func (q *Queries) GetScenarioByID(ctx context.Context, arg GetScenarioByIDParams) (Scenario, error) {
-	row := q.db.QueryRow(ctx, getScenarioByID, arg.ID, arg.PhoneNumber)
-	var i Scenario
+type GetScenarioByIDRow struct {
+	ID          pgtype.UUID
+	UserID      pgtype.UUID
+	Title       string
+	Description pgtype.Text
+	Conditions  []byte
+	Params      []byte
+	IsActive    pgtype.Bool
+	CreatedAt   pgtype.Timestamp
+	UpdatedAt   pgtype.Timestamp
+}
+
+func (q *Queries) GetScenarioByID(ctx context.Context, arg GetScenarioByIDParams) (GetScenarioByIDRow, error) {
+	row := q.db.QueryRow(ctx, getScenarioByID, arg.ID, arg.UserID)
+	var i GetScenarioByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.PhoneNumber,
+		&i.UserID,
 		&i.Title,
 		&i.Description,
 		&i.Conditions,
@@ -99,23 +123,35 @@ func (q *Queries) GetScenarioByID(ctx context.Context, arg GetScenarioByIDParams
 }
 
 const getUserScenarios = `-- name: GetUserScenarios :many
-SELECT id, phone_number, title, description, conditions, params, is_active, created_at, updated_at FROM scenarios 
-WHERE phone_number = $1
+SELECT id, user_id, title, description, conditions, params, is_active, created_at, updated_at FROM scenarios 
+WHERE user_id = $1
 ORDER BY created_at DESC
 `
 
-func (q *Queries) GetUserScenarios(ctx context.Context, phoneNumber string) ([]Scenario, error) {
-	rows, err := q.db.Query(ctx, getUserScenarios, phoneNumber)
+type GetUserScenariosRow struct {
+	ID          pgtype.UUID
+	UserID      pgtype.UUID
+	Title       string
+	Description pgtype.Text
+	Conditions  []byte
+	Params      []byte
+	IsActive    pgtype.Bool
+	CreatedAt   pgtype.Timestamp
+	UpdatedAt   pgtype.Timestamp
+}
+
+func (q *Queries) GetUserScenarios(ctx context.Context, userID pgtype.UUID) ([]GetUserScenariosRow, error) {
+	rows, err := q.db.Query(ctx, getUserScenarios, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Scenario
+	var items []GetUserScenariosRow
 	for rows.Next() {
-		var i Scenario
+		var i GetUserScenariosRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.PhoneNumber,
+			&i.UserID,
 			&i.Title,
 			&i.Description,
 			&i.Conditions,
@@ -143,13 +179,13 @@ SET
     params = COALESCE($6, params),
     is_active = COALESCE($7, is_active),
     updated_at = NOW()
-WHERE id = $1 AND phone_number = $2
-RETURNING id, phone_number, title, description, conditions, params, is_active, created_at, updated_at
+WHERE id = $1 AND user_id = $2
+RETURNING id, user_id, title, description, conditions, params, is_active, created_at, updated_at
 `
 
 type UpdateScenarioParams struct {
 	ID          pgtype.UUID
-	PhoneNumber string
+	UserID      pgtype.UUID
 	Title       string
 	Description pgtype.Text
 	Conditions  []byte
@@ -157,20 +193,32 @@ type UpdateScenarioParams struct {
 	IsActive    pgtype.Bool
 }
 
-func (q *Queries) UpdateScenario(ctx context.Context, arg UpdateScenarioParams) (Scenario, error) {
+type UpdateScenarioRow struct {
+	ID          pgtype.UUID
+	UserID      pgtype.UUID
+	Title       string
+	Description pgtype.Text
+	Conditions  []byte
+	Params      []byte
+	IsActive    pgtype.Bool
+	CreatedAt   pgtype.Timestamp
+	UpdatedAt   pgtype.Timestamp
+}
+
+func (q *Queries) UpdateScenario(ctx context.Context, arg UpdateScenarioParams) (UpdateScenarioRow, error) {
 	row := q.db.QueryRow(ctx, updateScenario,
 		arg.ID,
-		arg.PhoneNumber,
+		arg.UserID,
 		arg.Title,
 		arg.Description,
 		arg.Conditions,
 		arg.Params,
 		arg.IsActive,
 	)
-	var i Scenario
+	var i UpdateScenarioRow
 	err := row.Scan(
 		&i.ID,
-		&i.PhoneNumber,
+		&i.UserID,
 		&i.Title,
 		&i.Description,
 		&i.Conditions,

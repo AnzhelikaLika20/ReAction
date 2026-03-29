@@ -10,20 +10,29 @@ import (
 )
 
 type Listener struct {
-	client        *tdlib.Client
-	isRunning     bool
-	cancel        context.CancelFunc
-	kafkaProducer *chat_updates.ChatUpdatesProducer
-	phoneNumber   string
-	chatsService  *chats.ChatService
+	client             *tdlib.Client
+	isRunning          bool
+	cancel             context.CancelFunc
+	kafkaProducer      *chat_updates.ChatUpdatesProducer
+	jwtSessionID       string
+	appUserID          string
+	messengerAccountID string
+	chatsService       *chats.ChatService
 }
 
-func NewListener(client *tdlib.Client, phoneNumber string, chatsService *chats.ChatService, kafkaProducer *chat_updates.ChatUpdatesProducer) *Listener {
+func NewListener(
+	client *tdlib.Client,
+	jwtSessionID, appUserID, messengerAccountID string,
+	chatsService *chats.ChatService,
+	kafkaProducer *chat_updates.ChatUpdatesProducer,
+) *Listener {
 	return &Listener{
-		client:        client,
-		kafkaProducer: kafkaProducer,
-		phoneNumber:   phoneNumber,
-		chatsService:  chatsService,
+		client:             client,
+		kafkaProducer:      kafkaProducer,
+		jwtSessionID:       jwtSessionID,
+		appUserID:          appUserID,
+		messengerAccountID: messengerAccountID,
+		chatsService:       chatsService,
 	}
 }
 
@@ -69,7 +78,7 @@ func (l *Listener) Start(ctx context.Context) {
 		eventFilter := func(msg *tdlib.TdMessage) bool {
 			updateMsg := (*msg).(*tdlib.UpdateNewMessage)
 
-			isAllowed, err := l.chatsService.IsChatAllowed(ctx, l.phoneNumber, updateMsg.Message.ChatID)
+			isAllowed, err := l.chatsService.IsChatAllowed(ctx, l.appUserID, l.messengerAccountID, updateMsg.Message.ChatID)
 			if err != nil {
 				log.Println(err)
 				return false
@@ -121,16 +130,18 @@ func (l *Listener) sendToKafka(message *Message, eventType string) {
 	}
 
 	messageEvent := chat_updates.ChatUpdateMessageEvent{
-		PhoneNumber: l.phoneNumber,
-		EventType:   eventType,
-		MessageID:   message.ID,
-		ChatID:      message.ChatID,
-		ChatTitle:   message.ChatTitle,
-		ChatType:    message.ChatType,
-		Text:        message.Text,
-		SenderID:    message.SenderID,
-		IsOutgoing:  message.IsOutgoing,
-		Timestamp:   message.Timestamp,
+		UserID:             l.appUserID,
+		SessionID:          l.jwtSessionID,
+		MessengerAccountID: l.messengerAccountID,
+		EventType:          eventType,
+		MessageID:          message.ID,
+		ChatID:             message.ChatID,
+		ChatTitle:          message.ChatTitle,
+		ChatType:           message.ChatType,
+		Text:               message.Text,
+		SenderID:           message.SenderID,
+		IsOutgoing:         message.IsOutgoing,
+		Timestamp:          message.Timestamp,
 	}
 
 	err := l.kafkaProducer.SendTelegramMessage(messageEvent)

@@ -31,7 +31,7 @@ func NewScenarioHandler(scenarioService *scenarios.ScenarioService) *ScenarioHan
 // @Failure 500 {object} ErrorResponse
 // @Router /scenarios [post]
 func (h *ScenarioHandler) CreateScenario(c *gin.Context) {
-	phoneNumber, exists := c.Get("phone_number")
+	userID, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Не авторизован"})
 		return
@@ -43,7 +43,7 @@ func (h *ScenarioHandler) CreateScenario(c *gin.Context) {
 		return
 	}
 
-	scenario, err := h.scenarioService.CreateScenario(c.Request.Context(), phoneNumber.(string), req)
+	scenario, err := h.scenarioService.CreateScenario(c.Request.Context(), userID.(string), req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
@@ -62,13 +62,13 @@ func (h *ScenarioHandler) CreateScenario(c *gin.Context) {
 // @Failure 500 {object} ErrorResponse
 // @Router /scenarios [get]
 func (h *ScenarioHandler) GetUserScenarios(c *gin.Context) {
-	phoneNumber, exists := c.Get("phone_number")
+	userID, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Не авторизован"})
 		return
 	}
 
-	scenarios, err := h.scenarioService.GetUserScenarios(c.Request.Context(), phoneNumber.(string))
+	scenarios, err := h.scenarioService.GetUserScenarios(c.Request.Context(), userID.(string))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
@@ -89,7 +89,7 @@ func (h *ScenarioHandler) GetUserScenarios(c *gin.Context) {
 // @Failure 500 {object} ErrorResponse
 // @Router /scenarios/{id} [get]
 func (h *ScenarioHandler) GetScenarioByID(c *gin.Context) {
-	phoneNumber, exists := c.Get("phone_number")
+	userID, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Не авторизован"})
 		return
@@ -101,7 +101,7 @@ func (h *ScenarioHandler) GetScenarioByID(c *gin.Context) {
 		return
 	}
 
-	scenario, err := h.scenarioService.GetScenarioByID(c.Request.Context(), id, phoneNumber.(string))
+	scenario, err := h.scenarioService.GetScenarioByID(c.Request.Context(), id, userID.(string))
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
 		return
@@ -125,7 +125,7 @@ func (h *ScenarioHandler) GetScenarioByID(c *gin.Context) {
 // @Failure 500 {object} ErrorResponse
 // @Router /scenarios/{id} [put]
 func (h *ScenarioHandler) UpdateScenario(c *gin.Context) {
-	phoneNumber, exists := c.Get("phone_number")
+	userID, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Не авторизован"})
 		return
@@ -143,7 +143,7 @@ func (h *ScenarioHandler) UpdateScenario(c *gin.Context) {
 		return
 	}
 
-	scenario, err := h.scenarioService.UpdateScenario(c.Request.Context(), id, phoneNumber.(string), req)
+	scenario, err := h.scenarioService.UpdateScenario(c.Request.Context(), id, userID.(string), req)
 	if err != nil {
 		if err.Error() == "scenario not found" {
 			c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
@@ -168,7 +168,7 @@ func (h *ScenarioHandler) UpdateScenario(c *gin.Context) {
 // @Failure 500 {object} ErrorResponse
 // @Router /scenarios/{id} [delete]
 func (h *ScenarioHandler) DeleteScenario(c *gin.Context) {
-	phoneNumber, exists := c.Get("phone_number")
+	userID, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Не авторизован"})
 		return
@@ -180,7 +180,7 @@ func (h *ScenarioHandler) DeleteScenario(c *gin.Context) {
 		return
 	}
 
-	if err := h.scenarioService.DeleteScenario(c.Request.Context(), id, phoneNumber.(string)); err != nil {
+	if err := h.scenarioService.DeleteScenario(c.Request.Context(), id, userID.(string)); err != nil {
 		if err.Error() == "scenario not found" {
 			c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
 		} else {

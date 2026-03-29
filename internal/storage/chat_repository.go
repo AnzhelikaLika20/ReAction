@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"ReAction/internal/storage/sqlc/gen"
+	db "ReAction/internal/storage/sqlc/gen"
 )
 
 type ChatRepository struct {
@@ -18,55 +18,101 @@ func NewChatRepository(q *db.Queries) *ChatRepository {
 type Chat struct {
 	ID         int64  `json:"id"`
 	Name       string `json:"name"`
-	Type       string `json:"type"` // "private", "group", "channel", "supergroup"
+	Type       string `json:"type"`
 	IsSelected bool   `json:"is_selected"`
 }
 
-func (r *ChatRepository) GetSelectedChats(ctx context.Context, phoneNumber string) ([]int64, error) {
-	user, err := r.q.GetUserByPhone(ctx, phoneNumber)
+func (r *ChatRepository) GetSelectedChats(ctx context.Context, userID, messengerAccountID string) ([]int64, error) {
+	uid, err := ParseUUID(userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
+		return nil, err
 	}
-
-	return user.Chats, nil
+	mid, err := ParseUUID(messengerAccountID)
+	if err != nil {
+		return nil, err
+	}
+	chats, err := r.q.GetMessengerAccountSelectedChats(ctx, db.GetMessengerAccountSelectedChatsParams{
+		ID:     mid,
+		UserID: uid,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get messenger selected chats: %w", err)
+	}
+	return chats, nil
 }
 
-func (r *ChatRepository) UpdateSelectedChats(ctx context.Context, phoneNumber string, chatIDs []int64) error {
-	return r.q.UpdateUserChats(ctx, db.UpdateUserChatsParams{
-		PhoneNumber: phoneNumber,
-		Chats:       chatIDs,
+func (r *ChatRepository) UpdateSelectedChats(ctx context.Context, userID, messengerAccountID string, chatIDs []int64) error {
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return err
+	}
+	mid, err := ParseUUID(messengerAccountID)
+	if err != nil {
+		return err
+	}
+	return r.q.UpdateMessengerAccountSelectedChats(ctx, db.UpdateMessengerAccountSelectedChatsParams{
+		ID:              mid,
+		UserID:          uid,
+		SelectedChatIds: chatIDs,
 	})
 }
 
-func (r *ChatRepository) AddChat(ctx context.Context, phoneNumber string, chatID int64) error {
-	return r.q.AddChatToUser(ctx, db.AddChatToUserParams{
-		PhoneNumber: phoneNumber,
+func (r *ChatRepository) AddChat(ctx context.Context, userID, messengerAccountID string, chatID int64) error {
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return err
+	}
+	mid, err := ParseUUID(messengerAccountID)
+	if err != nil {
+		return err
+	}
+	return r.q.AddChatToMessengerAccount(ctx, db.AddChatToMessengerAccountParams{
+		ID:          mid,
+		UserID:      uid,
 		ArrayAppend: chatID,
 	})
 }
 
-func (r *ChatRepository) RemoveChat(ctx context.Context, phoneNumber string, chatID int64) error {
-	return r.q.RemoveChatFromUser(ctx, db.RemoveChatFromUserParams{
-		PhoneNumber: phoneNumber,
+func (r *ChatRepository) RemoveChat(ctx context.Context, userID, messengerAccountID string, chatID int64) error {
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return err
+	}
+	mid, err := ParseUUID(messengerAccountID)
+	if err != nil {
+		return err
+	}
+	return r.q.RemoveChatFromMessengerAccount(ctx, db.RemoveChatFromMessengerAccountParams{
+		ID:          mid,
+		UserID:      uid,
 		ArrayRemove: chatID,
 	})
 }
 
-func (r *ChatRepository) ClearChats(ctx context.Context, phoneNumber string) error {
-	return r.q.ClearUserChats(ctx, phoneNumber)
+func (r *ChatRepository) ClearChats(ctx context.Context, userID, messengerAccountID string) error {
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return err
+	}
+	mid, err := ParseUUID(messengerAccountID)
+	if err != nil {
+		return err
+	}
+	return r.q.ClearMessengerAccountChats(ctx, db.ClearMessengerAccountChatsParams{
+		ID:     mid,
+		UserID: uid,
+	})
 }
 
-func (r *ChatRepository) IsChatSelected(ctx context.Context, phoneNumber string, chatID int64) (bool, error) {
-	selectedChats, err := r.GetSelectedChats(ctx, phoneNumber)
+func (r *ChatRepository) IsChatSelected(ctx context.Context, userID, messengerAccountID string, chatID int64) (bool, error) {
+	selectedChats, err := r.GetSelectedChats(ctx, userID, messengerAccountID)
 	if err != nil {
 		return false, err
 	}
-
 	for _, id := range selectedChats {
 		if id == chatID {
 			return true, nil
 		}
 	}
-
 	return false, nil
 }

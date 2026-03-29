@@ -7,64 +7,119 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createUser = `-- name: CreateUser :one
+const createUserWithCredentials = `-- name: CreateUserWithCredentials :one
 INSERT INTO users (
-    phone_number
-) VALUES ($1)
-RETURNING phone_number, is_active, created_at, updated_at, chats
+    email,
+    password_hash
+) VALUES (lower($1), $2)
+RETURNING id, email, password_hash, is_active, created_at, updated_at
 `
 
-func (q *Queries) CreateUser(ctx context.Context, phoneNumber string) (User, error) {
-	row := q.db.QueryRow(ctx, createUser, phoneNumber)
-	var i User
+type CreateUserWithCredentialsParams struct {
+	Lower        string
+	PasswordHash pgtype.Text
+}
+
+type CreateUserWithCredentialsRow struct {
+	ID           pgtype.UUID
+	Email        string
+	PasswordHash pgtype.Text
+	IsActive     pgtype.Bool
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) CreateUserWithCredentials(ctx context.Context, arg CreateUserWithCredentialsParams) (CreateUserWithCredentialsRow, error) {
+	row := q.db.QueryRow(ctx, createUserWithCredentials, arg.Lower, arg.PasswordHash)
+	var i CreateUserWithCredentialsRow
 	err := row.Scan(
-		&i.PhoneNumber,
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.Chats,
 	)
 	return i, err
 }
 
 const deleteUser = `-- name: DeleteUser :exec
 DELETE FROM users 
-WHERE phone_number = $1
+WHERE id = $1
 `
 
-func (q *Queries) DeleteUser(ctx context.Context, phoneNumber string) error {
-	_, err := q.db.Exec(ctx, deleteUser, phoneNumber)
+func (q *Queries) DeleteUser(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUser, id)
 	return err
 }
 
-const getUserByPhone = `-- name: GetUserByPhone :one
-SELECT phone_number, is_active, created_at, updated_at, chats FROM users 
-WHERE phone_number = $1
+const getUserByEmail = `-- name: GetUserByEmail :one
+SELECT id, email, password_hash, is_active, created_at, updated_at FROM users 
+WHERE lower(email) = lower($1)
 `
 
-func (q *Queries) GetUserByPhone(ctx context.Context, phoneNumber string) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByPhone, phoneNumber)
-	var i User
+type GetUserByEmailRow struct {
+	ID           pgtype.UUID
+	Email        string
+	PasswordHash pgtype.Text
+	IsActive     pgtype.Bool
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (GetUserByEmailRow, error) {
+	row := q.db.QueryRow(ctx, getUserByEmail, lower)
+	var i GetUserByEmailRow
 	err := row.Scan(
-		&i.PhoneNumber,
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.Chats,
+	)
+	return i, err
+}
+
+const getUserByID = `-- name: GetUserByID :one
+SELECT id, email, password_hash, is_active, created_at, updated_at FROM users 
+WHERE id = $1
+`
+
+type GetUserByIDRow struct {
+	ID           pgtype.UUID
+	Email        string
+	PasswordHash pgtype.Text
+	IsActive     pgtype.Bool
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDRow, error) {
+	row := q.db.QueryRow(ctx, getUserByID, id)
+	var i GetUserByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const updateUserLastAuth = `-- name: UpdateUserLastAuth :exec
 UPDATE users 
-SET 
-    updated_at = NOW()
-WHERE phone_number = $1
+SET updated_at = NOW()
+WHERE id = $1
 `
 
-func (q *Queries) UpdateUserLastAuth(ctx context.Context, phoneNumber string) error {
-	_, err := q.db.Exec(ctx, updateUserLastAuth, phoneNumber)
+func (q *Queries) UpdateUserLastAuth(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, updateUserLastAuth, id)
 	return err
 }

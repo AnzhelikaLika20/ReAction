@@ -27,22 +27,24 @@ type ChatUpdatesConsumer struct {
 }
 
 type ConversationMessage struct {
-	SessionID       string    `json:"session_id"`
-	EventType       string    `json:"event_type"`
-	MessageID       int64     `json:"message_id"`
-	ChatID          int64     `json:"chat_id"`
-	ChatTitle       string    `json:"chat_title,omitempty"`
-	ChatType        string    `json:"chat_type,omitempty"`
-	Text            string    `json:"text"`
-	SenderID        int64     `json:"sender_id"`
-	SenderFirstName string    `json:"sender_first_name,omitempty"`
-	SenderLastName  string    `json:"sender_last_name,omitempty"`
-	SenderUsername  string    `json:"sender_username,omitempty"`
-	IsOutgoing      bool      `json:"is_outgoing"`
-	Timestamp       int64     `json:"timestamp"`
-	ReceivedAt      time.Time `json:"received_at"`
-	Offset          int64     `json:"-"`
-	Partition       int       `json:"-"`
+	UserID             string    `json:"user_id,omitempty"`
+	SessionID          string    `json:"session_id"`
+	MessengerAccountID string    `json:"messenger_account_id,omitempty"`
+	EventType          string    `json:"event_type"`
+	MessageID          int64     `json:"message_id"`
+	ChatID             int64     `json:"chat_id"`
+	ChatTitle          string    `json:"chat_title,omitempty"`
+	ChatType           string    `json:"chat_type,omitempty"`
+	Text               string    `json:"text"`
+	SenderID           int64     `json:"sender_id"`
+	SenderFirstName    string    `json:"sender_first_name,omitempty"`
+	SenderLastName     string    `json:"sender_last_name,omitempty"`
+	SenderUsername     string    `json:"sender_username,omitempty"`
+	IsOutgoing         bool      `json:"is_outgoing"`
+	Timestamp          int64     `json:"timestamp"`
+	ReceivedAt         time.Time `json:"received_at"`
+	Offset             int64     `json:"-"`
+	Partition          int       `json:"-"`
 }
 
 func NewChatUpdatesConsumer(cfg config.KafkaConfig, userActionsProducer *user_actions.UserActionProducer, aiService *ai.AIService) (*ChatUpdatesConsumer, error) {

@@ -15,19 +15,34 @@ import (
 )
 
 type Client struct {
-	tdlibClient   *tdlib.Client
-	authState     string
-	listener      *Listener
-	config        config.TelegramConfig
-	mu            sync.RWMutex
-	authSessionID string
-	ctx           context.Context
-	cancelFunc    context.CancelFunc
-	authReady     chan struct{}
-	UpdatedAt     time.Time
+	tdlibClient        *tdlib.Client
+	authState          string
+	listener           *Listener
+	config             config.TelegramConfig
+	mu                 sync.RWMutex
+	authSessionID      string
+	ctx                context.Context
+	cancelFunc         context.CancelFunc
+	authReady          chan struct{}
+	UpdatedAt          time.Time
+	telegramPhone      string
+	telegramPhoneLock  sync.RWMutex
+	MessengerAccountID string
 }
 
-func NewClientWithHTTPAuth(sessionID string, phoneNumber string, cfg config.TelegramConfig, authManager *AuthStateManager, chatService *chats.ChatService, kafkaProducer *chat_updates.ChatUpdatesProducer) (*Client, error) {
+func (c *Client) SetTelegramPhoneNumber(phone string) {
+	c.telegramPhoneLock.Lock()
+	defer c.telegramPhoneLock.Unlock()
+	c.telegramPhone = phone
+}
+
+func (c *Client) TelegramPhoneNumber() string {
+	c.telegramPhoneLock.RLock()
+	defer c.telegramPhoneLock.RUnlock()
+	return c.telegramPhone
+}
+
+func NewClientWithHTTPAuth(sessionID string, appUserID string, messengerAccountID string, cfg config.TelegramConfig, authManager *AuthStateManager, chatService *chats.ChatService, kafkaProducer *chat_updates.ChatUpdatesProducer) (*Client, error) {
 	tdlib.SetLogVerbosityLevel(int(cfg.LogLevel))
 
 	tdlibClient := tdlib.NewClient(tdlib.Config{
@@ -49,16 +64,17 @@ func NewClientWithHTTPAuth(sessionID string, phoneNumber string, cfg config.Tele
 	ctx, cancel := context.WithCancel(context.Background())
 
 	client := &Client{
-		tdlibClient:   tdlibClient,
-		config:        cfg,
-		listener:      NewListener(tdlibClient, phoneNumber, chatService, kafkaProducer),
-		authSessionID: sessionID,
-		ctx:           ctx,
-		cancelFunc:    cancel,
-		authReady:     make(chan struct{}),
+		tdlibClient:        tdlibClient,
+		config:             cfg,
+		listener:           NewListener(tdlibClient, sessionID, appUserID, messengerAccountID, chatService, kafkaProducer),
+		authSessionID:      sessionID,
+		ctx:                ctx,
+		cancelFunc:         cancel,
+		authReady:          make(chan struct{}),
+		MessengerAccountID: messengerAccountID,
 	}
 
-	authManager.RegisterAuthorizer(sessionID, phoneNumber, client)
+	authManager.RegisterAuthorizer(sessionID, appUserID, client)
 	client.authState = "inited"
 
 	return client, nil

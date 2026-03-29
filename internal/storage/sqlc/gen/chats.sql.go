@@ -7,78 +7,94 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const addChatToUser = `-- name: AddChatToUser :exec
-UPDATE users 
-SET chats = array_append(chats, $2),
+const addChatToMessengerAccount = `-- name: AddChatToMessengerAccount :exec
+UPDATE user_messenger_accounts
+SET selected_chat_ids = array_append(selected_chat_ids, $3),
     updated_at = NOW()
-WHERE phone_number = $1
+WHERE id = $1 AND user_id = $2
 `
 
-type AddChatToUserParams struct {
-	PhoneNumber string
+type AddChatToMessengerAccountParams struct {
+	ID          pgtype.UUID
+	UserID      pgtype.UUID
 	ArrayAppend interface{}
 }
 
-func (q *Queries) AddChatToUser(ctx context.Context, arg AddChatToUserParams) error {
-	_, err := q.db.Exec(ctx, addChatToUser, arg.PhoneNumber, arg.ArrayAppend)
+func (q *Queries) AddChatToMessengerAccount(ctx context.Context, arg AddChatToMessengerAccountParams) error {
+	_, err := q.db.Exec(ctx, addChatToMessengerAccount, arg.ID, arg.UserID, arg.ArrayAppend)
 	return err
 }
 
-const clearUserChats = `-- name: ClearUserChats :exec
-UPDATE users 
-SET chats = '{}',
+const clearMessengerAccountChats = `-- name: ClearMessengerAccountChats :exec
+UPDATE user_messenger_accounts
+SET selected_chat_ids = '{}',
     updated_at = NOW()
-WHERE phone_number = $1
+WHERE id = $1 AND user_id = $2
 `
 
-func (q *Queries) ClearUserChats(ctx context.Context, phoneNumber string) error {
-	_, err := q.db.Exec(ctx, clearUserChats, phoneNumber)
+type ClearMessengerAccountChatsParams struct {
+	ID     pgtype.UUID
+	UserID pgtype.UUID
+}
+
+func (q *Queries) ClearMessengerAccountChats(ctx context.Context, arg ClearMessengerAccountChatsParams) error {
+	_, err := q.db.Exec(ctx, clearMessengerAccountChats, arg.ID, arg.UserID)
 	return err
 }
 
-const getUserChats = `-- name: GetUserChats :one
-SELECT chats FROM users WHERE phone_number = $1
+const getMessengerAccountSelectedChats = `-- name: GetMessengerAccountSelectedChats :one
+SELECT selected_chat_ids FROM user_messenger_accounts
+WHERE id = $1 AND user_id = $2
 `
 
-func (q *Queries) GetUserChats(ctx context.Context, phoneNumber string) ([]int64, error) {
-	row := q.db.QueryRow(ctx, getUserChats, phoneNumber)
-	var chats []int64
-	err := row.Scan(&chats)
-	return chats, err
+type GetMessengerAccountSelectedChatsParams struct {
+	ID     pgtype.UUID
+	UserID pgtype.UUID
 }
 
-const removeChatFromUser = `-- name: RemoveChatFromUser :exec
-UPDATE users 
-SET chats = array_remove(chats, $2),
+func (q *Queries) GetMessengerAccountSelectedChats(ctx context.Context, arg GetMessengerAccountSelectedChatsParams) ([]int64, error) {
+	row := q.db.QueryRow(ctx, getMessengerAccountSelectedChats, arg.ID, arg.UserID)
+	var selected_chat_ids []int64
+	err := row.Scan(&selected_chat_ids)
+	return selected_chat_ids, err
+}
+
+const removeChatFromMessengerAccount = `-- name: RemoveChatFromMessengerAccount :exec
+UPDATE user_messenger_accounts
+SET selected_chat_ids = array_remove(selected_chat_ids, $3),
     updated_at = NOW()
-WHERE phone_number = $1
+WHERE id = $1 AND user_id = $2
 `
 
-type RemoveChatFromUserParams struct {
-	PhoneNumber string
+type RemoveChatFromMessengerAccountParams struct {
+	ID          pgtype.UUID
+	UserID      pgtype.UUID
 	ArrayRemove interface{}
 }
 
-func (q *Queries) RemoveChatFromUser(ctx context.Context, arg RemoveChatFromUserParams) error {
-	_, err := q.db.Exec(ctx, removeChatFromUser, arg.PhoneNumber, arg.ArrayRemove)
+func (q *Queries) RemoveChatFromMessengerAccount(ctx context.Context, arg RemoveChatFromMessengerAccountParams) error {
+	_, err := q.db.Exec(ctx, removeChatFromMessengerAccount, arg.ID, arg.UserID, arg.ArrayRemove)
 	return err
 }
 
-const updateUserChats = `-- name: UpdateUserChats :exec
-UPDATE users 
-SET chats = $2, 
-    updated_at = NOW() 
-WHERE phone_number = $1
+const updateMessengerAccountSelectedChats = `-- name: UpdateMessengerAccountSelectedChats :exec
+UPDATE user_messenger_accounts
+SET selected_chat_ids = $3,
+    updated_at = NOW()
+WHERE id = $1 AND user_id = $2
 `
 
-type UpdateUserChatsParams struct {
-	PhoneNumber string
-	Chats       []int64
+type UpdateMessengerAccountSelectedChatsParams struct {
+	ID              pgtype.UUID
+	UserID          pgtype.UUID
+	SelectedChatIds []int64
 }
 
-func (q *Queries) UpdateUserChats(ctx context.Context, arg UpdateUserChatsParams) error {
-	_, err := q.db.Exec(ctx, updateUserChats, arg.PhoneNumber, arg.Chats)
+func (q *Queries) UpdateMessengerAccountSelectedChats(ctx context.Context, arg UpdateMessengerAccountSelectedChatsParams) error {
+	_, err := q.db.Exec(ctx, updateMessengerAccountSelectedChats, arg.ID, arg.UserID, arg.SelectedChatIds)
 	return err
 }

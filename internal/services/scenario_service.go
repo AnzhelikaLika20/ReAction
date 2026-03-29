@@ -52,9 +52,9 @@ type ScenarioResponse struct {
 	UpdatedAt                   time.Time `json:"updated_at"`
 }
 
-func (s *ScenarioService) CreateScenario(ctx context.Context, phoneNumber string, dto CreateScenarioDTO) (*ScenarioResponse, error) {
+func (s *ScenarioService) CreateScenario(ctx context.Context, userID string, dto CreateScenarioDTO) (*ScenarioResponse, error) {
 	params := storage.CreateScenarioParams{
-		PhoneNumber:     phoneNumber,
+		UserID:          userID,
 		Name:            dto.Name,
 		Description:     dto.ReminderDescriptionTemplate,
 		TriggerPhrase:   dto.TriggerPhrase,
@@ -72,8 +72,8 @@ func (s *ScenarioService) CreateScenario(ctx context.Context, phoneNumber string
 	return convertScenarioToResponse(scenario)
 }
 
-func (s *ScenarioService) GetUserScenarios(ctx context.Context, phoneNumber string) ([]ScenarioResponse, error) {
-	scenarios, err := s.scenarioRepo.GetUserScenarios(ctx, phoneNumber)
+func (s *ScenarioService) GetUserScenarios(ctx context.Context, userID string) ([]ScenarioResponse, error) {
+	scenarios, err := s.scenarioRepo.GetUserScenarios(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user scenarios: %w", err)
 	}
@@ -90,8 +90,8 @@ func (s *ScenarioService) GetUserScenarios(ctx context.Context, phoneNumber stri
 	return responses, nil
 }
 
-func (s *ScenarioService) GetScenarioByID(ctx context.Context, id, phoneNumber string) (*ScenarioResponse, error) {
-	scenario, err := s.scenarioRepo.GetByID(ctx, id, phoneNumber)
+func (s *ScenarioService) GetScenarioByID(ctx context.Context, id, userID string) (*ScenarioResponse, error) {
+	scenario, err := s.scenarioRepo.GetByID(ctx, id, userID)
 	if err != nil {
 		return nil, fmt.Errorf("scenario not found: %w", err)
 	}
@@ -99,10 +99,10 @@ func (s *ScenarioService) GetScenarioByID(ctx context.Context, id, phoneNumber s
 	return convertScenarioToResponse(&scenario)
 }
 
-func (s *ScenarioService) UpdateScenario(ctx context.Context, id, phoneNumber string, dto UpdateScenarioDTO) (*ScenarioResponse, error) {
+func (s *ScenarioService) UpdateScenario(ctx context.Context, id, userID string, dto UpdateScenarioDTO) (*ScenarioResponse, error) {
 	params := storage.UpdateScenarioParams{
 		ID:              id,
-		PhoneNumber:     phoneNumber,
+		UserID:          userID,
 		Name:            dto.Name,
 		Description:     dto.ReminderDescriptionTemplate,
 		TriggerPhrase:   dto.TriggerPhrase,
@@ -120,13 +120,13 @@ func (s *ScenarioService) UpdateScenario(ctx context.Context, id, phoneNumber st
 	return convertScenarioToResponse(&scenario)
 }
 
-func (s *ScenarioService) DeleteScenario(ctx context.Context, id, phoneNumber string) error {
-	_, err := s.scenarioRepo.GetByID(ctx, id, phoneNumber)
+func (s *ScenarioService) DeleteScenario(ctx context.Context, id, userID string) error {
+	_, err := s.scenarioRepo.GetByID(ctx, id, userID)
 	if err != nil {
 		return fmt.Errorf("scenario not found: %w", err)
 	}
 
-	if err := s.scenarioRepo.Delete(ctx, id, phoneNumber); err != nil {
+	if err := s.scenarioRepo.Delete(ctx, id, userID); err != nil {
 		return fmt.Errorf("failed to delete scenario: %w", err)
 	}
 
@@ -165,13 +165,13 @@ func convertScenarioToResponse(scenario *db.Scenario) (*ScenarioResponse, error)
 		reminderMinutes = int32(minutes)
 	}
 
-	var uuidStr uuid.UUID
+	idStr := ""
 	if scenario.ID.Valid {
-		uuidStr, _ = uuid.FromBytes(scenario.ID.Bytes[:])
+		idStr = uuid.UUID(scenario.ID.Bytes).String()
 	}
 
 	return &ScenarioResponse{
-		ID:                          uuidStr.String(),
+		ID:                          idStr,
 		Name:                        scenario.Title,
 		TriggerPhrase:               triggerPhrase,
 		ReminderTitleTemplate:       reminderTitle,

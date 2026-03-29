@@ -1,4 +1,17 @@
 definitions:
+  auth.MessengerAccountItem:
+    properties:
+      connection_status:
+        type: string
+      id:
+        type: string
+      is_active_for_session:
+        type: boolean
+      label:
+        type: string
+      provider:
+        type: string
+    type: object
   chats.ChatDTO:
     properties:
       id:
@@ -16,6 +29,8 @@ definitions:
         items:
           type: integer
         type: array
+      messenger_account_id:
+        type: string
     required:
     - chat_ids
     type: object
@@ -40,17 +55,34 @@ definitions:
         example: error message
         type: string
     type: object
-  handlers.PasswordRequest:
-    description: Запрос для отправки пароля двухфакторной аутентификации
+  handlers.LoginRequest:
+    description: Вход по email и паролю
     properties:
+      email:
+        example: user@example.com
+        type: string
       password:
-        example: my2fapassword
+        example: secret12345
         type: string
     required:
+    - email
     - password
     type: object
+  handlers.MeResponse:
+    description: Идентификатор пользователя, email и номер Telegram после привязки
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      phone_number:
+        example: "+79001234567"
+        type: string
+    type: object
   handlers.PhoneRequest:
-    description: Запрос для отправки номера телефона при авторизации
+    description: Запрос для отправки номера телефона при авторизации в Telegram
     properties:
       phone_number:
         example: "+1234567890"
@@ -58,20 +90,48 @@ definitions:
     required:
     - phone_number
     type: object
+  handlers.RegisterRequest:
+    description: Регистрация по email и паролю
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      password:
+        example: secret12345
+        minLength: 8
+        type: string
+    required:
+    - email
+    - password
+    type: object
   handlers.SessionResponse:
-    description: SessionResponse структура для ответа о сессии
+    description: SessionResponse состояние авторизации Telegram (tdlib) для текущего
+      session_id из JWT
     properties:
       auth_state:
+        example: wait_code
         type: string
     type: object
+  handlers.TelegramPasswordRequest:
+    description: Запрос для отправки пароля двухфакторной аутентификации Telegram
+    properties:
+      password:
+        example: my2fapassword
+        type: string
+    required:
+    - password
+    type: object
   handlers.TokenResponse:
-    description: TokenResponse структура для возврата токена
+    description: TokenResponse структура для возврата JWT после регистрации или входа
     properties:
       expires_in:
+        example: 86400
         type: integer
       token:
+        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
         type: string
       token_type:
+        example: Bearer
         type: string
     type: object
   scenarios.CreateScenarioDTO:
@@ -134,9 +194,99 @@ definitions:
 info:
   contact: {}
 paths:
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Аутентификация по email и паролю, выдача JWT (Bearer).
+      parameters:
+      - description: Учётные данные
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.TokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Неверный email или пароль
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Аккаунт отключён
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Вход в приложение
+      tags:
+      - auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Создаёт учётную запись по email и паролю и возвращает JWT (Bearer).
+        Пароль хранится в виде bcrypt-хэша.
+      parameters:
+      - description: Email и пароль (мин. 8 символов)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handlers.TokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Email уже зарегистрирован
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Регистрация пользователя
+      tags:
+      - auth
+  /auth/session:
+    delete:
+      description: Удаляет запись сессии в БД по session_id из JWT. Клиент должен
+        удалить токен локально.
+      responses:
+        "204":
+          description: Успешный выход, тело пустое
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Выход из приложения
+      tags:
+      - auth
   /auth/session/status:
     get:
-      description: Возвращает текущий статус сессии
+      description: Текущее состояние tdlib для session_id из JWT (ожидание кода, готов
+        и т.д.).
       produces:
       - application/json
       responses:
@@ -150,16 +300,16 @@ paths:
             $ref: '#/definitions/handlers.ErrorResponse'
       security:
       - Bearer: []
-      summary: Получить статус сессии
+      summary: Статус авторизации Telegram
       tags:
       - auth
   /auth/telegram/code:
     post:
       consumes:
       - application/json
-      description: Отправляет код подтверждения из Telegram
+      description: Отправляет код из SMS/Telegram для завершения входа в аккаунт Telegram.
       parameters:
-      - description: Verification code
+      - description: Код подтверждения
         in: body
         name: request
         required: true
@@ -182,14 +332,15 @@ paths:
             $ref: '#/definitions/handlers.ErrorResponse'
       security:
       - Bearer: []
-      summary: Установить код подтверждения
+      summary: Подтвердить код из Telegram
       tags:
       - auth
   /auth/telegram/init:
     post:
       consumes:
       - application/json
-      description: Создает Telegram клиент и обновляет статус сессии
+      description: Запускает процесс подключения Telegram для текущего пользователя.
+        Требуется затем POST /auth/telegram/phone с номером.
       produces:
       - application/json
       responses:
@@ -207,21 +358,22 @@ paths:
             $ref: '#/definitions/handlers.ErrorResponse'
       security:
       - Bearer: []
-      summary: Инициализировать Telegram клиента
+      summary: Инициализировать клиент Telegram (tdlib)
       tags:
       - auth
   /auth/telegram/password:
     post:
       consumes:
       - application/json
-      description: Отправляет пароль двухфакторной аутентификации
+      description: Если у аккаунта Telegram включена 2FA, передаётся облачный пароль
+        (не пароль приложения Re:Action).
       parameters:
-      - description: Password
+      - description: Пароль 2FA Telegram
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/handlers.PasswordRequest'
+          $ref: '#/definitions/handlers.TelegramPasswordRequest'
       produces:
       - application/json
       responses:
@@ -239,16 +391,16 @@ paths:
             $ref: '#/definitions/handlers.ErrorResponse'
       security:
       - Bearer: []
-      summary: Установить пароль
+      summary: Пароль двухфакторной аутентификации Telegram
       tags:
       - auth
   /auth/telegram/phone:
     post:
       consumes:
       - application/json
-      description: Отправляет номер телефона для авторизации в Telegram
+      description: Передаёт номер в tdlib для получения кода подтверждения в Telegram.
       parameters:
-      - description: Phone number
+      - description: Номер телефона в международном формате
         in: body
         name: request
         required: true
@@ -271,43 +423,13 @@ paths:
             $ref: '#/definitions/handlers.ErrorResponse'
       security:
       - Bearer: []
-      summary: Установить номер телефона для Telegram
-      tags:
-      - auth
-  /auth/token:
-    post:
-      consumes:
-      - application/json
-      description: Создает JWT токен
-      parameters:
-      - description: Phone number
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/handlers.PhoneRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.TokenResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-      summary: Получить токен авторизации
+      summary: Отправить номер телефона в Telegram
       tags:
       - auth
   /calendar/url:
     get:
-      description: Возвращает URL с base64 телефона и подписью для проверки. Требуется
-        Bearer.
+      description: Возвращает URL с base64 идентификатора пользователя (UUID) и HMAC-подписью.
+        Требуется Bearer.
       produces:
       - application/json
       responses:
@@ -326,7 +448,14 @@ paths:
       - calendar
   /chats:
     get:
-      description: Возвращает список чатов Telegram с информацией о выборе
+      description: Возвращает список чатов Telegram с информацией о выборе. Только
+        для аккаунта, привязанного к текущей JWT-сессии (query messenger_account_id
+        должен совпадать или быть пустым).
+      parameters:
+      - description: UUID аккаунта мессенджера
+        in: query
+        name: messenger_account_id
+        type: string
       produces:
       - application/json
       responses:
@@ -351,7 +480,12 @@ paths:
       - chats
   /chats/selected:
     get:
-      description: Возвращает список ID выбранных чатов
+      description: Возвращает список ID выбранных чатов для аккаунта (query messenger_account_id).
+      parameters:
+      - description: UUID аккаунта мессенджера
+        in: query
+        name: messenger_account_id
+        type: string
       produces:
       - application/json
       responses:
@@ -381,7 +515,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Сохраняет список выбранных чатов для анализа
+      description: Сохраняет список выбранных чатов для указанного аккаунта мессенджера
+        (messenger_account_id в теле; если пусто — аккаунт текущей сессии).
       parameters:
       - description: Список ID чатов
         in: body
@@ -596,16 +731,62 @@ paths:
       summary: Обновить сценарий
       tags:
       - scenarios
+  /users/me:
+    get:
+      description: Возвращает профиль по user_id из JWT. Телефон заполняется после
+        успешного подключения Telegram.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.MeResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Текущий пользователь
+      tags:
+      - users
+  /users/me/messenger-accounts:
+    get:
+      description: Список подключённых и ожидающих аккаунтов; is_active_for_session
+        — этот аккаунт сейчас в активном tdlib-клиенте для данного JWT session_id.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/auth.MessengerAccountItem'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Аккаунты мессенджеров пользователя
+      tags:
+      - users
   /webcal/{phoneBase64}/{signature}/calendar.ics:
     get:
-      description: 'Путь: base64(телефон) и HMAC-подпись для проверки.'
+      description: 'Путь: base64(user_id UUID) и HMAC-подпись для проверки.'
       parameters:
-      - description: Телефон в base64
+      - description: Идентификатор пользователя (UUID) в base64url
         in: path
         name: phoneBase64
         required: true
         type: string
-      - description: HMAC-подпись от телефона
+      - description: HMAC-SHA256 подпись от идентификатора
         in: path
         name: signature
         required: true

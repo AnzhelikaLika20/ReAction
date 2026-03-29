@@ -22,7 +22,7 @@ func NewAuthStateManager() *AuthStateManager {
 	return mgr
 }
 
-func (m *AuthStateManager) monitorAuthState(sessionID string, phoneNumber string, client *Client) {
+func (m *AuthStateManager) monitorAuthState(sessionID string, appUserID string, client *Client) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	defer close(client.authReady)
@@ -52,10 +52,10 @@ func (m *AuthStateManager) monitorAuthState(sessionID string, phoneNumber string
 	}
 }
 
-func (m *AuthStateManager) RegisterAuthorizer(sessionID string, phoneNumber string, client *Client) {
+func (m *AuthStateManager) RegisterAuthorizer(sessionID string, appUserID string, client *Client) {
 	m.clients[sessionID] = client
 
-	go m.monitorAuthState(sessionID, phoneNumber, client)
+	go m.monitorAuthState(sessionID, appUserID, client)
 }
 
 func (m *AuthStateManager) GetAuthState(id string) string {
@@ -87,6 +87,7 @@ func (m *AuthStateManager) SetPhoneNumber(id, phoneNumber string) (tdlib.Authori
 		return nil, fmt.Errorf("Error sending phone number: %v", err)
 	}
 
+	client.SetTelegramPhoneNumber(phoneNumber)
 	client.UpdatedAt = time.Now()
 
 	return newState, nil

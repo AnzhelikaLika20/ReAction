@@ -15,6 +15,141 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/auth/login": {
+            "post": {
+                "description": "Аутентификация по email и паролю, выдача JWT (Bearer).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Вход в приложение",
+                "parameters": [
+                    {
+                        "description": "Учётные данные",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.LoginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.TokenResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Неверный email или пароль",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Аккаунт отключён",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/register": {
+            "post": {
+                "description": "Создаёт учётную запись по email и паролю и возвращает JWT (Bearer). Пароль хранится в виде bcrypt-хэша.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Регистрация пользователя",
+                "parameters": [
+                    {
+                        "description": "Email и пароль (мин. 8 символов)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RegisterRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.TokenResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Email уже зарегистрирован",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/session": {
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Удаляет запись сессии в БД по session_id из JWT. Клиент должен удалить токен локально.",
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Выход из приложения",
+                "responses": {
+                    "204": {
+                        "description": "Успешный выход, тело пустое"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/session/status": {
             "get": {
                 "security": [
@@ -22,14 +157,14 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Возвращает текущий статус сессии",
+                "description": "Текущее состояние tdlib для session_id из JWT (ожидание кода, готов и т.д.).",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "auth"
                 ],
-                "summary": "Получить статус сессии",
+                "summary": "Статус авторизации Telegram",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -53,7 +188,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Отправляет код подтверждения из Telegram",
+                "description": "Отправляет код из SMS/Telegram для завершения входа в аккаунт Telegram.",
                 "consumes": [
                     "application/json"
                 ],
@@ -63,10 +198,10 @@ const docTemplate = `{
                 "tags": [
                     "auth"
                 ],
-                "summary": "Установить код подтверждения",
+                "summary": "Подтвердить код из Telegram",
                 "parameters": [
                     {
-                        "description": "Verification code",
+                        "description": "Код подтверждения",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -104,7 +239,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Создает Telegram клиент и обновляет статус сессии",
+                "description": "Запускает процесс подключения Telegram для текущего пользователя. Требуется затем POST /auth/telegram/phone с номером.",
                 "consumes": [
                     "application/json"
                 ],
@@ -114,7 +249,7 @@ const docTemplate = `{
                 "tags": [
                     "auth"
                 ],
-                "summary": "Инициализировать Telegram клиента",
+                "summary": "Инициализировать клиент Telegram (tdlib)",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -144,7 +279,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Отправляет пароль двухфакторной аутентификации",
+                "description": "Если у аккаунта Telegram включена 2FA, передаётся облачный пароль (не пароль приложения Re:Action).",
                 "consumes": [
                     "application/json"
                 ],
@@ -154,15 +289,15 @@ const docTemplate = `{
                 "tags": [
                     "auth"
                 ],
-                "summary": "Установить пароль",
+                "summary": "Пароль двухфакторной аутентификации Telegram",
                 "parameters": [
                     {
-                        "description": "Password",
+                        "description": "Пароль 2FA Telegram",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.PasswordRequest"
+                            "$ref": "#/definitions/handlers.TelegramPasswordRequest"
                         }
                     }
                 ],
@@ -195,7 +330,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Отправляет номер телефона для авторизации в Telegram",
+                "description": "Передаёт номер в tdlib для получения кода подтверждения в Telegram.",
                 "consumes": [
                     "application/json"
                 ],
@@ -205,10 +340,10 @@ const docTemplate = `{
                 "tags": [
                     "auth"
                 ],
-                "summary": "Установить номер телефона для Telegram",
+                "summary": "Отправить номер телефона в Telegram",
                 "parameters": [
                     {
-                        "description": "Phone number",
+                        "description": "Номер телефона в международном формате",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -239,52 +374,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/token": {
-            "post": {
-                "description": "Создает JWT токен",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "auth"
-                ],
-                "summary": "Получить токен авторизации",
-                "parameters": [
-                    {
-                        "description": "Phone number",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handlers.PhoneRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.TokenResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/calendar/url": {
             "get": {
                 "security": [
@@ -292,7 +381,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Возвращает URL с base64 телефона и подписью для проверки. Требуется Bearer.",
+                "description": "Возвращает URL с base64 идентификатора пользователя (UUID) и HMAC-подписью. Требуется Bearer.",
                 "produces": [
                     "application/json"
                 ],
@@ -323,7 +412,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Возвращает список чатов Telegram с информацией о выборе",
+                "description": "Возвращает список чатов Telegram с информацией о выборе. Только для аккаунта, привязанного к текущей JWT-сессии (query messenger_account_id должен совпадать или быть пустым).",
                 "produces": [
                     "application/json"
                 ],
@@ -331,6 +420,14 @@ const docTemplate = `{
                     "chats"
                 ],
                 "summary": "Получить список чатов пользователя",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID аккаунта мессенджера",
+                        "name": "messenger_account_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -363,7 +460,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Возвращает список ID выбранных чатов",
+                "description": "Возвращает список ID выбранных чатов для аккаунта (query messenger_account_id).",
                 "produces": [
                     "application/json"
                 ],
@@ -371,6 +468,14 @@ const docTemplate = `{
                     "chats"
                 ],
                 "summary": "Получить выбранные чаты",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID аккаунта мессенджера",
+                        "name": "messenger_account_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -407,7 +512,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Сохраняет список выбранных чатов для анализа",
+                "description": "Сохраняет список выбранных чатов для указанного аккаунта мессенджера (messenger_account_id в теле; если пусто — аккаунт текущей сессии).",
                 "consumes": [
                     "application/json"
                 ],
@@ -743,9 +848,80 @@ const docTemplate = `{
                 }
             }
         },
+        "/users/me": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Возвращает профиль по user_id из JWT. Телефон заполняется после успешного подключения Telegram.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Текущий пользователь",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.MeResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me/messenger-accounts": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Список подключённых и ожидающих аккаунтов; is_active_for_session — этот аккаунт сейчас в активном tdlib-клиенте для данного JWT session_id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Аккаунты мессенджеров пользователя",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/auth.MessengerAccountItem"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/webcal/{phoneBase64}/{signature}/calendar.ics": {
             "get": {
-                "description": "Путь: base64(телефон) и HMAC-подпись для проверки.",
+                "description": "Путь: base64(user_id UUID) и HMAC-подпись для проверки.",
                 "produces": [
                     "text/calendar"
                 ],
@@ -756,14 +932,14 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Телефон в base64",
+                        "description": "Идентификатор пользователя (UUID) в base64url",
                         "name": "phoneBase64",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "HMAC-подпись от телефона",
+                        "description": "HMAC-SHA256 подпись от идентификатора",
                         "name": "signature",
                         "in": "path",
                         "required": true
@@ -790,6 +966,26 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "auth.MessengerAccountItem": {
+            "type": "object",
+            "properties": {
+                "connection_status": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active_for_session": {
+                    "type": "boolean"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                }
+            }
+        },
         "chats.ChatDTO": {
             "type": "object",
             "properties": {
@@ -818,6 +1014,9 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                },
+                "messenger_account_id": {
+                    "type": "string"
                 }
             }
         },
@@ -852,21 +1051,44 @@ const docTemplate = `{
                 }
             }
         },
-        "handlers.PasswordRequest": {
-            "description": "Запрос для отправки пароля двухфакторной аутентификации",
+        "handlers.LoginRequest": {
+            "description": "Вход по email и паролю",
             "type": "object",
             "required": [
+                "email",
                 "password"
             ],
             "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
                 "password": {
                     "type": "string",
-                    "example": "my2fapassword"
+                    "example": "secret12345"
+                }
+            }
+        },
+        "handlers.MeResponse": {
+            "description": "Идентификатор пользователя, email и номер Telegram после привязки",
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "phone_number": {
+                    "type": "string",
+                    "example": "+79001234567"
                 }
             }
         },
         "handlers.PhoneRequest": {
-            "description": "Запрос для отправки номера телефона при авторизации",
+            "description": "Запрос для отправки номера телефона при авторизации в Telegram",
             "type": "object",
             "required": [
                 "phone_number"
@@ -878,27 +1100,63 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.RegisterRequest": {
+            "description": "Регистрация по email и паролю",
+            "type": "object",
+            "required": [
+                "email",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "password": {
+                    "type": "string",
+                    "minLength": 8,
+                    "example": "secret12345"
+                }
+            }
+        },
         "handlers.SessionResponse": {
-            "description": "SessionResponse структура для ответа о сессии",
+            "description": "SessionResponse состояние авторизации Telegram (tdlib) для текущего session_id из JWT",
             "type": "object",
             "properties": {
                 "auth_state": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "wait_code"
+                }
+            }
+        },
+        "handlers.TelegramPasswordRequest": {
+            "description": "Запрос для отправки пароля двухфакторной аутентификации Telegram",
+            "type": "object",
+            "required": [
+                "password"
+            ],
+            "properties": {
+                "password": {
+                    "type": "string",
+                    "example": "my2fapassword"
                 }
             }
         },
         "handlers.TokenResponse": {
-            "description": "TokenResponse структура для возврата токена",
+            "description": "TokenResponse структура для возврата JWT после регистрации или входа",
             "type": "object",
             "properties": {
                 "expires_in": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 86400
                 },
                 "token": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                 },
                 "token_type": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "Bearer"
                 }
             }
         },
