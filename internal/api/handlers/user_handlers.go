@@ -8,7 +8,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// MeResponse ответ профиля для GET /users/me
 // @Description Идентификатор пользователя, email и номер Telegram после привязки
 type MeResponse struct {
 	ID          string `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
@@ -16,7 +15,6 @@ type MeResponse struct {
 	PhoneNumber string `json:"phone_number,omitempty" example:"+79001234567"`
 }
 
-// GetMe
 // @Summary Текущий пользователь
 // @Description Возвращает профиль по user_id из JWT. Телефон заполняется после успешного подключения Telegram.
 // @Tags users
