@@ -24,10 +24,10 @@ type UserScenarioForAI struct {
 }
 
 type ReminderFromAI struct {
-	Title          string `json:"title"`
-	Description    string `json:"description"`
-	DateTime       string `json:"datetime"`
-	EndDateTime    string `json:"end_datetime,omitempty"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	DateTime    string `json:"datetime"`
+	EndDateTime string `json:"end_datetime,omitempty"`
 }
 
 type CheckResult struct {

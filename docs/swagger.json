@@ -921,14 +921,14 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Идентификатор пользователя (UUID) в base64url",
-                        "name": "phoneBase64",
+                        "description": "UUID пользователя в base64url (как в ссылке из /calendar/url)",
+                        "name": "userIdBase64",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "HMAC-SHA256 подпись от идентификатора",
+                        "description": "HMAC-SHA256 подпись от UUID (hex)",
                         "name": "signature",
                         "in": "path",
                         "required": true
@@ -943,6 +943,15 @@
                     },
                     "400": {
                         "description": "Неверная подпись",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка загрузки напоминаний",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
