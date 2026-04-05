@@ -116,6 +116,17 @@ func (s *AuthService) HasTelegramClient(messengerAccountID string) bool {
 	return s.authManager.GetClientBySessionId(messengerAccountID) != nil
 }
 
+func (s *AuthService) DeleteMessengerAccount(ctx context.Context, userID, messengerAccountID string) error {
+	s.authManager.RemoveMessengerClient(messengerAccountID)
+	if err := s.messengerRepo.DeleteMessengerAccountForUser(ctx, messengerAccountID, userID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrMessengerNotOwned
+		}
+		return err
+	}
+	return nil
+}
+
 func (s *AuthService) ValidateToken(ctx context.Context, token string) (*Claims, error) {
 	claims, err := s.jwtService.ValidateToken(token)
 	if err != nil {
@@ -153,13 +164,6 @@ func (s *AuthService) SetPassword(ctx context.Context, sessionID, password strin
 }
 
 func (s *AuthService) EnsureMessengerAccountForTelegramInit(ctx context.Context, appUserID string) (string, error) {
-	mid, err := s.messengerRepo.GetLatestPendingTelegramAccountID(ctx, appUserID)
-	if err == nil {
-		return mid, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return "", err
-	}
 	return s.messengerRepo.InsertPendingTelegram(ctx, appUserID)
 }
 
@@ -177,16 +181,10 @@ func (s *AuthService) ResolveChatMessengerID(ctx context.Context, userID, reques
 	return req, nil
 }
 
-func (s *AuthService) ListMessengerAccounts(ctx context.Context, userID, activeMessengerAccountID string) ([]MessengerAccountItem, error) {
+func (s *AuthService) ListMessengerAccounts(ctx context.Context, userID string) ([]MessengerAccountItem, error) {
 	rows, err := s.messengerRepo.ListByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
-	}
-	activeClientID := ""
-	if activeMessengerAccountID != "" {
-		if c := s.authManager.GetClientBySessionId(activeMessengerAccountID); c != nil {
-			activeClientID = c.MessengerAccountID
-		}
 	}
 	out := make([]MessengerAccountItem, 0, len(rows))
 	for _, row := range rows {
@@ -200,7 +198,7 @@ func (s *AuthService) ListMessengerAccounts(ctx context.Context, userID, activeM
 			Provider:           string(row.Provider),
 			Label:              label,
 			ConnectionStatus:   string(row.ConnectionStatus),
-			IsActiveForSession: activeClientID != "" && rid == activeClientID,
+			IsActiveForSession: s.authManager.GetClientBySessionId(rid) != nil,
 		})
 	}
 	return out, nil
@@ -227,6 +225,9 @@ func (s *AuthService) CreateTdlibClient(ctx context.Context, appUserID, messenge
 
 		go func() {
 			<-client.GetAuthReadyChannel()
+			if s.authManager.GetClientBySessionId(messengerAccountID) == nil {
+				return
+			}
 			log.Printf("[AUTH] Auth ready received for messenger %s", messengerAccountID)
 
 			ctx := context.Background()

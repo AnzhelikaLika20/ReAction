@@ -27,6 +27,7 @@ type Client struct {
 	telegramPhone      string
 	telegramPhoneLock  sync.RWMutex
 	MessengerAccountID string
+	shutdownOnce       sync.Once
 }
 
 func (c *Client) SetTelegramPhoneNumber(phone string) {
@@ -77,6 +78,20 @@ func NewClientWithHTTPAuth(messengerAccountID string, appUserID string, cfg conf
 	client.authState = "inited"
 
 	return client, nil
+}
+
+func (c *Client) Shutdown() {
+	c.shutdownOnce.Do(func() {
+		if c.listener != nil {
+			c.listener.Stop()
+		}
+		if c.cancelFunc != nil {
+			c.cancelFunc()
+		}
+		if c.tdlibClient != nil {
+			c.tdlibClient.DestroyInstance()
+		}
+	})
 }
 
 func (c *Client) GetAuthReadyChannel() <-chan struct{} {

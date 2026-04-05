@@ -1,8 +1,8 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
-	"strings"
 
 	"ReAction/internal/services/auth"
 
@@ -58,7 +58,6 @@ func GetMe(authService *auth.AuthService) gin.HandlerFunc {
 // @Tags users
 // @Produce json
 // @Security Bearer
-// @Param active_messenger_account_id query string false "UUID аккаунта, для которого проверяется активная tdlib-сессия"
 // @Success 200 {array} auth.MessengerAccountItem
 // @Failure 401 {object} ErrorResponse
 // @Router /users/me/messenger-accounts [get]
@@ -70,8 +69,7 @@ func ListMessengerAccounts(authService *auth.AuthService) gin.HandlerFunc {
 			return
 		}
 
-		activeMID := strings.TrimSpace(c.Query("active_messenger_account_id"))
-		list, err := authService.ListMessengerAccounts(c.Request.Context(), userID, activeMID)
+		list, err := authService.ListMessengerAccounts(c.Request.Context(), userID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 			return
@@ -81,7 +79,43 @@ func ListMessengerAccounts(authService *auth.AuthService) gin.HandlerFunc {
 	}
 }
 
+// @Summary Удалить привязку мессенджера
+// @Description Удаляет запись user_messenger_accounts и останавливает tdlib-клиент в памяти, если он был запущен
+// @Tags users
+// @Security Bearer
+// @Param messenger_account_id path string true "UUID аккаунта мессенджера"
+// @Success 204 "Удалено"
+// @Failure 401 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /users/me/messenger-accounts/{messenger_account_id} [delete]
+func DeleteMessengerAccount(authService *auth.AuthService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetString("user_id")
+		if userID == "" {
+			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Не авторизован"})
+			return
+		}
+		messengerAccountID := c.Param("messenger_account_id")
+		if messengerAccountID == "" {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "messenger_account_id is required"})
+			return
+		}
+
+		if err := authService.DeleteMessengerAccount(c.Request.Context(), userID, messengerAccountID); err != nil {
+			if errors.Is(err, auth.ErrMessengerNotOwned) {
+				c.JSON(http.StatusForbidden, ErrorResponse{Error: err.Error()})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+			return
+		}
+		c.Status(http.StatusNoContent)
+	}
+}
+
 func RegisterUserRoutes(router *gin.Engine, authService *auth.AuthService) {
 	router.GET("/users/me", GetMe(authService))
 	router.GET("/users/me/messenger-accounts", ListMessengerAccounts(authService))
+	router.DELETE("/users/me/messenger-accounts/:messenger_account_id", DeleteMessengerAccount(authService))
 }
