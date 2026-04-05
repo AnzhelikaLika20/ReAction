@@ -118,12 +118,6 @@ type Scenario struct {
 	UserID      pgtype.UUID
 }
 
-type Session struct {
-	TokenHash string
-	CreatedAt pgtype.Timestamptz
-	UserID    pgtype.UUID
-}
-
 type User struct {
 	IsActive     pgtype.Bool
 	CreatedAt    pgtype.Timestamptz

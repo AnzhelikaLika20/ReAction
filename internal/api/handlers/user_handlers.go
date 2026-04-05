@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"ReAction/internal/services/auth"
 
@@ -53,23 +54,24 @@ func GetMe(authService *auth.AuthService) gin.HandlerFunc {
 }
 
 // @Summary Аккаунты мессенджеров пользователя
-// @Description Список подключённых и ожидающих аккаунтов; is_active_for_session — этот аккаунт сейчас в активном tdlib-клиенте для данного JWT session_id.
+// @Description Список подключённых и ожидающих аккаунтов
 // @Tags users
 // @Produce json
 // @Security Bearer
+// @Param active_messenger_account_id query string false "UUID аккаунта, для которого проверяется активная tdlib-сессия"
 // @Success 200 {array} auth.MessengerAccountItem
 // @Failure 401 {object} ErrorResponse
 // @Router /users/me/messenger-accounts [get]
 func ListMessengerAccounts(authService *auth.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString("user_id")
-		sessionID := c.GetString("session_id")
 		if userID == "" {
 			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Не авторизован"})
 			return
 		}
 
-		list, err := authService.ListMessengerAccounts(c.Request.Context(), userID, sessionID)
+		activeMID := strings.TrimSpace(c.Query("active_messenger_account_id"))
+		list, err := authService.ListMessengerAccounts(c.Request.Context(), userID, activeMID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 			return

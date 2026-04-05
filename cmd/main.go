@@ -46,7 +46,6 @@ func main() {
 	log.Printf("Database connected successfully")
 
 	userRepo := storage.NewUserRepository(dbStorage.Queries)
-	sessionRepo := storage.NewSessionRepository(dbStorage.Queries)
 	messengerRepo := storage.NewMessengerAccountRepository(dbStorage.Queries)
 	scenarioRepo := storage.NewScenarioRepository(dbStorage.Queries)
 	reminderRepo := storage.NewReminderRepository(dbStorage.Queries)
@@ -63,7 +62,6 @@ func main() {
 	authService := auth.NewAuthService(
 		jwtService,
 		userRepo,
-		sessionRepo,
 		messengerRepo,
 		authManager,
 		chatService,

@@ -23,8 +23,8 @@ import (
 var ErrInvalidCredentials = errors.New("invalid email or password")
 var ErrEmailTaken = errors.New("email already registered")
 var ErrTelegramNotConnected = errors.New("telegram client not initialized; connect Telegram first")
-var ErrNoMessengerForSession = errors.New("no messenger account linked to this session")
 var ErrMessengerNotOwned = errors.New("messenger account not found")
+var ErrMessengerAccountIDRequired = errors.New("messenger_account_id is required")
 
 type MessengerAccountItem struct {
 	ID                 string `json:"id"`
@@ -37,7 +37,6 @@ type MessengerAccountItem struct {
 type AuthService struct {
 	jwtService    *JWTService
 	userRepo      *storage.UserRepository
-	sessionRepo   *storage.SessionRepository
 	messengerRepo *storage.MessengerAccountRepository
 	authManager   *telegram.AuthStateManager
 	chatService   *chats.ChatService
@@ -46,7 +45,6 @@ type AuthService struct {
 func NewAuthService(
 	jwtService *JWTService,
 	userRepo *storage.UserRepository,
-	sessionRepo *storage.SessionRepository,
 	messengerRepo *storage.MessengerAccountRepository,
 	authManager *telegram.AuthStateManager,
 	chatService *chats.ChatService,
@@ -54,7 +52,6 @@ func NewAuthService(
 	return &AuthService{
 		jwtService:    jwtService,
 		userRepo:      userRepo,
-		sessionRepo:   sessionRepo,
 		messengerRepo: messengerRepo,
 		authManager:   authManager,
 		chatService:   chatService,
@@ -111,6 +108,14 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (string
 	return s.issueToken(ctx, u)
 }
 
+func (s *AuthService) EnsureMessengerAccountOwned(ctx context.Context, messengerAccountID, userID string) error {
+	return s.messengerRepo.EnsureMessengerOwnedByUser(ctx, messengerAccountID, userID)
+}
+
+func (s *AuthService) HasTelegramClient(messengerAccountID string) bool {
+	return s.authManager.GetClientBySessionId(messengerAccountID) != nil
+}
+
 func (s *AuthService) ValidateToken(ctx context.Context, token string) (*Claims, error) {
 	claims, err := s.jwtService.ValidateToken(token)
 	if err != nil {
@@ -118,10 +123,6 @@ func (s *AuthService) ValidateToken(ctx context.Context, token string) (*Claims,
 	}
 
 	return claims, nil
-}
-
-func (s *AuthService) DeleteSession(ctx context.Context, sessionID string) error {
-	return s.sessionRepo.DeleteSession(ctx, sessionID)
 }
 
 func (s *AuthService) SetPhoneNumber(ctx context.Context, sessionID, phoneNumber string) (string, error) {
@@ -151,10 +152,7 @@ func (s *AuthService) SetPassword(ctx context.Context, sessionID, password strin
 	return string(state.GetAuthorizationStateEnum()), nil
 }
 
-func (s *AuthService) EnsureMessengerAccountForTelegramInit(ctx context.Context, sessionID, appUserID string) (string, error) {
-	if c := s.authManager.GetClientBySessionId(sessionID); c != nil && c.MessengerAccountID != "" {
-		return c.MessengerAccountID, nil
-	}
+func (s *AuthService) EnsureMessengerAccountForTelegramInit(ctx context.Context, appUserID string) (string, error) {
 	mid, err := s.messengerRepo.GetLatestPendingTelegramAccountID(ctx, appUserID)
 	if err == nil {
 		return mid, nil
@@ -165,18 +163,10 @@ func (s *AuthService) EnsureMessengerAccountForTelegramInit(ctx context.Context,
 	return s.messengerRepo.InsertPendingTelegram(ctx, appUserID)
 }
 
-func (s *AuthService) MessengerAccountIDForJWTSession(ctx context.Context, sessionID, userID string) (string, error) {
-	_ = userID
-	if c := s.authManager.GetClientBySessionId(sessionID); c != nil && c.MessengerAccountID != "" {
-		return c.MessengerAccountID, nil
-	}
-	return "", ErrNoMessengerForSession
-}
-
-func (s *AuthService) ResolveChatMessengerID(ctx context.Context, jwtSessionID, userID, requested string) (string, error) {
+func (s *AuthService) ResolveChatMessengerID(ctx context.Context, userID, requested string) (string, error) {
 	req := strings.TrimSpace(requested)
 	if req == "" {
-		return s.MessengerAccountIDForJWTSession(ctx, jwtSessionID, userID)
+		return "", ErrMessengerAccountIDRequired
 	}
 	if err := s.messengerRepo.EnsureMessengerOwnedByUser(ctx, req, userID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -187,14 +177,16 @@ func (s *AuthService) ResolveChatMessengerID(ctx context.Context, jwtSessionID, 
 	return req, nil
 }
 
-func (s *AuthService) ListMessengerAccounts(ctx context.Context, userID, jwtSessionID string) ([]MessengerAccountItem, error) {
+func (s *AuthService) ListMessengerAccounts(ctx context.Context, userID, activeMessengerAccountID string) ([]MessengerAccountItem, error) {
 	rows, err := s.messengerRepo.ListByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 	activeClientID := ""
-	if c := s.authManager.GetClientBySessionId(jwtSessionID); c != nil && c.MessengerAccountID != "" {
-		activeClientID = c.MessengerAccountID
+	if activeMessengerAccountID != "" {
+		if c := s.authManager.GetClientBySessionId(activeMessengerAccountID); c != nil {
+			activeClientID = c.MessengerAccountID
+		}
 	}
 	out := make([]MessengerAccountItem, 0, len(rows))
 	for _, row := range rows {
@@ -225,17 +217,17 @@ func (s *AuthService) TelegramDisplayPhone(ctx context.Context, userID string) (
 	return phone, nil
 }
 
-func (s *AuthService) CreateTdlibClient(ctx context.Context, sessionID, appUserID, messengerAccountID string, cfg config.TelegramConfig, producer *chat_updates.ChatUpdatesProducer) {
+func (s *AuthService) CreateTdlibClient(ctx context.Context, appUserID, messengerAccountID string, cfg config.TelegramConfig, producer *chat_updates.ChatUpdatesProducer) {
 	go func() {
-		client, err := telegram.NewClientWithHTTPAuth(sessionID, appUserID, messengerAccountID, cfg, s.authManager, s.chatService, producer)
+		client, err := telegram.NewClientWithHTTPAuth(messengerAccountID, appUserID, cfg, s.authManager, s.chatService, producer)
 		if err != nil {
-			log.Printf("[TELEGRAM] ERROR: Failed to create Telegram client for session %s: %v", sessionID, err)
+			log.Printf("[TELEGRAM] ERROR: Failed to create Telegram client for messenger %s: %v", messengerAccountID, err)
 			return
 		}
 
 		go func() {
 			<-client.GetAuthReadyChannel()
-			log.Printf("[AUTH] Auth ready received for session %s", sessionID)
+			log.Printf("[AUTH] Auth ready received for messenger %s", messengerAccountID)
 
 			ctx := context.Background()
 			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -255,29 +247,17 @@ func (s *AuthService) CreateTdlibClient(ctx context.Context, sessionID, appUserI
 				}
 			}
 
-			existingSession, err := s.sessionRepo.GetSession(ctx, sessionID)
-			if err != nil {
-				log.Printf("[AUTH] ERROR checking session existence: %v", err)
-			}
-
-			if existingSession == nil {
-				log.Printf("[AUTH] Creating session in database: %s", sessionID)
-				if err := s.sessionRepo.CreateSession(ctx, sessionID, appUserID); err != nil {
-					log.Printf("[AUTH] ERROR creating session: %v", err)
-				}
-			}
-
 			listenerCtx := context.Background()
 			client.GetListener().Start(listenerCtx)
-			log.Printf("[AUTH] Listener started for session %s", sessionID)
+			log.Printf("[AUTH] Listener started for messenger %s", messengerAccountID)
 		}()
 
-		log.Printf("[TELEGRAM] Telegram client created successfully for session %s", sessionID)
+		log.Printf("[TELEGRAM] Telegram client created successfully for messenger %s", messengerAccountID)
 	}()
 }
 
-func (s *AuthService) GetUserChats(ctx context.Context, sessionID string) ([]*tdlib.Chat, error) {
-	client := s.authManager.GetClientBySessionId(sessionID)
+func (s *AuthService) GetUserChats(ctx context.Context, messengerAccountID string) ([]*tdlib.Chat, error) {
+	client := s.authManager.GetClientBySessionId(messengerAccountID)
 	if client == nil {
 		return nil, ErrTelegramNotConnected
 	}
@@ -292,10 +272,8 @@ func (s *AuthService) GetUserChats(ctx context.Context, sessionID string) ([]*td
 	return chats, nil
 }
 
-func (s *AuthService) GetAuthState(ctx context.Context, sessionID string) string {
-	state := s.authManager.GetAuthState(sessionID)
-
-	return string(state)
+func (s *AuthService) GetAuthState(ctx context.Context, messengerAccountID string) string {
+	return s.authManager.GetAuthState(messengerAccountID)
 }
 
 func (s *AuthService) GetTokenDuration() time.Duration {
