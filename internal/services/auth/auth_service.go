@@ -21,10 +21,13 @@ import (
 )
 
 var ErrInvalidCredentials = errors.New("invalid email or password")
+var ErrUserNotFound = errors.New("user not found")
 var ErrEmailTaken = errors.New("email already registered")
 var ErrTelegramNotConnected = errors.New("telegram client not initialized; connect Telegram first")
 var ErrMessengerNotOwned = errors.New("messenger account not found")
 var ErrMessengerAccountIDRequired = errors.New("messenger_account_id is required")
+var ErrDuplicateTelegramPhone = errors.New("Аккаунт Telegram с таким номером уже подключён или ожидает подключения")
+var ErrInvalidPhoneNumber = errors.New("укажите номер телефона в международном формате, например +79001234567")
 
 type MessengerAccountItem struct {
 	ID                 string `json:"id"`
@@ -127,6 +130,27 @@ func (s *AuthService) DeleteMessengerAccount(ctx context.Context, userID, messen
 	return nil
 }
 
+func (s *AuthService) DeleteMyAccount(ctx context.Context, userID, password string) error {
+	hash, err := s.userRepo.PasswordHashByUserID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrUserNotFound
+		}
+		return err
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
+		return ErrInvalidCredentials
+	}
+	rows, err := s.messengerRepo.ListByUserID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		s.authManager.RemoveMessengerClient(storage.UUIDToString(row.ID))
+	}
+	return s.userRepo.DeleteUserByID(ctx, userID)
+}
+
 func (s *AuthService) ValidateToken(ctx context.Context, token string) (*Claims, error) {
 	claims, err := s.jwtService.ValidateToken(token)
 	if err != nil {
@@ -136,13 +160,56 @@ func (s *AuthService) ValidateToken(ctx context.Context, token string) (*Claims,
 	return claims, nil
 }
 
-func (s *AuthService) SetPhoneNumber(ctx context.Context, sessionID, phoneNumber string) (string, error) {
-	state, err := s.authManager.SetPhoneNumber(sessionID, phoneNumber)
+func (s *AuthService) SetPhoneNumber(ctx context.Context, userID, messengerAccountID, phoneNumber string) (string, error) {
+	phoneKey := NormalizePhoneKey(phoneNumber)
+	if phoneKey == "" {
+		return "", ErrInvalidPhoneNumber
+	}
+
+	state, err := s.authManager.SetPhoneNumber(messengerAccountID, phoneNumber)
 	if err != nil {
 		return "", err
 	}
 
+	if err := s.messengerRepo.SetTelegramPhoneLabel(ctx, messengerAccountID, userID, strings.TrimSpace(phoneNumber)); err != nil {
+		log.Printf("[AUTH] SetTelegramPhoneLabel after phone: %v", err)
+	}
+
 	return string(state.GetAuthorizationStateEnum()), nil
+}
+
+func (s *AuthService) telegramPhoneTakenByUser(ctx context.Context, userID, phoneKey string) (bool, error) {
+	rows, err := s.messengerRepo.ListByUserID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	for _, row := range rows {
+		if string(row.Provider) != "telegram" {
+			continue
+		}
+		if !row.Label.Valid || strings.TrimSpace(row.Label.String) == "" {
+			continue
+		}
+		if NormalizePhoneKey(row.Label.String) == phoneKey {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *AuthService) EnsureTelegramInitWithPhone(ctx context.Context, userID, phoneNumber string) (string, error) {
+	phoneKey := NormalizePhoneKey(phoneNumber)
+	if phoneKey == "" {
+		return "", ErrInvalidPhoneNumber
+	}
+	taken, err := s.telegramPhoneTakenByUser(ctx, userID, phoneKey)
+	if err != nil {
+		return "", err
+	}
+	if taken {
+		return "", ErrDuplicateTelegramPhone
+	}
+	return s.messengerRepo.InsertPendingTelegram(ctx, userID)
 }
 
 func (s *AuthService) SetCode(ctx context.Context, sessionID, code string) (string, error) {
@@ -161,10 +228,6 @@ func (s *AuthService) SetPassword(ctx context.Context, sessionID, password strin
 	}
 
 	return string(state.GetAuthorizationStateEnum()), nil
-}
-
-func (s *AuthService) EnsureMessengerAccountForTelegramInit(ctx context.Context, appUserID string) (string, error) {
-	return s.messengerRepo.InsertPendingTelegram(ctx, appUserID)
 }
 
 func (s *AuthService) ResolveChatMessengerID(ctx context.Context, userID, requested string) (string, error) {

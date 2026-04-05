@@ -25,6 +25,11 @@ type LoginRequest struct {
 	Password string `json:"password" example:"secret12345" binding:"required"`
 }
 
+// @Description Тело POST /auth/telegram/init: номер для проверки дубликата до создания записи и клиента tdlib
+type TelegramInitRequest struct {
+	PhoneNumber string `json:"phone_number" example:"+79001234567" binding:"required"`
+}
+
 // @Description Запрос для отправки номера телефона при авторизации в Telegram
 type PhoneRequest struct {
 	PhoneNumber        string `json:"phone_number" example:"+1234567890" binding:"required"`
@@ -159,17 +164,6 @@ func (h *AuthHandlers) Login(c *gin.Context) {
 	})
 }
 
-// @Summary Выход из приложения
-// @Description Клиент удаляет JWT локально.
-// @Tags auth
-// @Security Bearer
-// @Success 204 "Успешный выход, тело пустое"
-// @Failure 401 {object} ErrorResponse
-// @Router /auth/session [delete]
-func (h *AuthHandlers) Logout(c *gin.Context) {
-	c.Status(http.StatusNoContent)
-}
-
 // InitTelegramClient
 // @Summary Инициализировать клиент Telegram (tdlib)
 // @Description Запускает процесс подключения Telegram для текущего пользователя. Требуется затем POST /auth/telegram/phone с номером.
@@ -177,16 +171,33 @@ func (h *AuthHandlers) Logout(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security Bearer
+// @Param request body TelegramInitRequest true "Номер телефона (международный формат)"
 // @Success 200 {object} TelegramInitResponse
+// @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse "Номер уже привязан к другому аккаунту Telegram этого пользователя"
 // @Failure 500 {object} ErrorResponse
 // @Router /auth/telegram/init [post]
 func (h *AuthHandlers) InitTelegramClient(c *gin.Context) {
 	userID := c.GetString("user_id")
 
-	messengerAccountID, err := h.authService.EnsureMessengerAccountForTelegramInit(c.Request.Context(), userID)
+	var req TelegramInitRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	messengerAccountID, err := h.authService.EnsureTelegramInitWithPhone(c.Request.Context(), userID, req.PhoneNumber)
 	if err != nil {
-		log.Printf("[AUTH] EnsureMessengerAccountForTelegramInit: %v", err)
+		if errors.Is(err, auth.ErrDuplicateTelegramPhone) {
+			c.JSON(http.StatusConflict, ErrorResponse{Error: err.Error()})
+			return
+		}
+		if errors.Is(err, auth.ErrInvalidPhoneNumber) {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+			return
+		}
+		log.Printf("[AUTH] EnsureTelegramInitWithPhone: %v", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to start messenger connection"})
 		return
 	}
@@ -237,8 +248,12 @@ func (h *AuthHandlers) SetPhoneNumber(c *gin.Context) {
 		return
 	}
 
-	state, err := h.authService.SetPhoneNumber(c.Request.Context(), mid, req.PhoneNumber)
+	state, err := h.authService.SetPhoneNumber(c.Request.Context(), userID, mid, req.PhoneNumber)
 	if err != nil {
+		if errors.Is(err, auth.ErrInvalidPhoneNumber) {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+			return
+		}
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
@@ -360,9 +375,6 @@ func (h *AuthHandlers) GetSessionStatus(c *gin.Context) {
 func (h *AuthHandlers) RegisterAuthRoutes(router *gin.Engine) {
 	router.POST("/auth/register", h.Register)
 	router.POST("/auth/login", h.Login)
-
-	protected := router.Group("/auth")
-	protected.DELETE("/session", h.Logout)
 
 	tg := router.Group("/auth/telegram")
 	tg.POST("/init", h.InitTelegramClient)

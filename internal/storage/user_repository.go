@@ -88,3 +88,26 @@ func (r *UserRepository) UpdateLastAuth(ctx context.Context, userID string) erro
 	}
 	return r.queries.UpdateUserLastAuth(ctx, uid)
 }
+
+func (r *UserRepository) PasswordHashByUserID(ctx context.Context, userID string) (string, error) {
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return "", err
+	}
+	row, err := r.queries.GetUserByID(ctx, uid)
+	if err != nil {
+		return "", err
+	}
+	if !row.PasswordHash.Valid || row.PasswordHash.String == "" {
+		return "", errors.New("user has no password hash")
+	}
+	return row.PasswordHash.String, nil
+}
+
+func (r *UserRepository) DeleteUserByID(ctx context.Context, userID string) error {
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return err
+	}
+	return r.queries.DeleteUser(ctx, uid)
+}
