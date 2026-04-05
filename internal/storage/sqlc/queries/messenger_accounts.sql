@@ -14,13 +14,6 @@ SELECT id, user_id, provider, label, connection_status, selected_chat_ids, conne
 FROM user_messenger_accounts
 WHERE id = $1 AND user_id = $2;
 
--- name: GetLatestPendingTelegramAccountByUserID :one
-SELECT id, user_id, provider, label, connection_status, selected_chat_ids, connected_at, created_at, updated_at
-FROM user_messenger_accounts
-WHERE user_id = $1 AND provider = 'telegram'::messenger_provider AND connection_status = 'pending'::messenger_connection_status
-ORDER BY created_at DESC
-LIMIT 1;
-
 -- name: GetLatestConnectedTelegramLabelByUserID :one
 SELECT label FROM user_messenger_accounts
 WHERE user_id = $1 AND connection_status = 'connected'::messenger_connection_status
@@ -53,3 +46,8 @@ SET
     updated_at = NOW()
 WHERE id = $1 AND user_id = $2
 RETURNING id, user_id, provider, label, connection_status, selected_chat_ids, connected_at, created_at, updated_at;
+
+-- name: DeleteMessengerAccountForUser :one
+DELETE FROM user_messenger_accounts
+WHERE id = $1 AND user_id = $2
+RETURNING id;

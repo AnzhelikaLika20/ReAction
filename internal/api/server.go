@@ -85,7 +85,6 @@ func jwtMiddleware(authService *auth.AuthService) gin.HandlerFunc {
 
 		c.Set("claims", claims)
 		c.Set("user_id", claims.UserID)
-		c.Set("session_id", claims.SessionID)
 
 		c.Next()
 	}

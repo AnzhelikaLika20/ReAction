@@ -35,24 +35,28 @@ func (r *MessengerAccountRepository) InsertPendingTelegram(ctx context.Context, 
 	return UUIDToString(row.ID), nil
 }
 
-func (r *MessengerAccountRepository) GetLatestPendingTelegramAccountID(ctx context.Context, userID string) (string, error) {
-	uid, err := ParseUUID(userID)
-	if err != nil {
-		return "", err
-	}
-	row, err := r.queries.GetLatestPendingTelegramAccountByUserID(ctx, uid)
-	if err != nil {
-		return "", err
-	}
-	return UUIDToString(row.ID), nil
-}
-
 func (r *MessengerAccountRepository) ListByUserID(ctx context.Context, userID string) ([]db.UserMessengerAccount, error) {
 	uid, err := ParseUUID(userID)
 	if err != nil {
 		return nil, err
 	}
 	return r.queries.ListMessengerAccountsByUserID(ctx, uid)
+}
+
+func (r *MessengerAccountRepository) DeleteMessengerAccountForUser(ctx context.Context, accountID, userID string) error {
+	aid, err := ParseUUID(accountID)
+	if err != nil {
+		return err
+	}
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return err
+	}
+	_, err = r.queries.DeleteMessengerAccountForUser(ctx, db.DeleteMessengerAccountForUserParams{
+		ID:     aid,
+		UserID: uid,
+	})
+	return err
 }
 
 func (r *MessengerAccountRepository) EnsureMessengerOwnedByUser(ctx context.Context, accountID, userID string) error {

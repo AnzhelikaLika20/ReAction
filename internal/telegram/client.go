@@ -27,6 +27,7 @@ type Client struct {
 	telegramPhone      string
 	telegramPhoneLock  sync.RWMutex
 	MessengerAccountID string
+	shutdownOnce       sync.Once
 }
 
 func (c *Client) SetTelegramPhoneNumber(phone string) {
@@ -41,7 +42,7 @@ func (c *Client) TelegramPhoneNumber() string {
 	return c.telegramPhone
 }
 
-func NewClientWithHTTPAuth(sessionID string, appUserID string, messengerAccountID string, cfg config.TelegramConfig, authManager *AuthStateManager, chatService *chats.ChatService, kafkaProducer *chat_updates.ChatUpdatesProducer) (*Client, error) {
+func NewClientWithHTTPAuth(messengerAccountID string, appUserID string, cfg config.TelegramConfig, authManager *AuthStateManager, chatService *chats.ChatService, kafkaProducer *chat_updates.ChatUpdatesProducer) (*Client, error) {
 	tdlib.SetLogVerbosityLevel(int(cfg.LogLevel))
 
 	tdlibClient := tdlib.NewClient(tdlib.Config{
@@ -55,8 +56,8 @@ func NewClientWithHTTPAuth(sessionID string, appUserID string, messengerAccountI
 		UseFileDatabase:     true,
 		UseChatInfoDatabase: true,
 		UseTestDataCenter:   cfg.TestDc,
-		DatabaseDirectory:   "/app/tdlib-sessions/db/" + sessionID,
-		FileDirectory:       "/app/tdlib-sessions/files/" + sessionID,
+		DatabaseDirectory:   "/app/tdlib-sessions/db/" + messengerAccountID,
+		FileDirectory:       "/app/tdlib-sessions/files/" + messengerAccountID,
 		IgnoreFileNames:     false,
 	})
 
@@ -65,18 +66,32 @@ func NewClientWithHTTPAuth(sessionID string, appUserID string, messengerAccountI
 	client := &Client{
 		tdlibClient:        tdlibClient,
 		config:             cfg,
-		listener:           NewListener(tdlibClient, sessionID, appUserID, messengerAccountID, chatService, kafkaProducer),
-		authSessionID:      sessionID,
+		listener:           NewListener(tdlibClient, appUserID, messengerAccountID, chatService, kafkaProducer),
+		authSessionID:      messengerAccountID,
 		ctx:                ctx,
 		cancelFunc:         cancel,
 		authReady:          make(chan struct{}),
 		MessengerAccountID: messengerAccountID,
 	}
 
-	authManager.RegisterAuthorizer(sessionID, appUserID, client)
+	authManager.RegisterAuthorizer(messengerAccountID, appUserID, client)
 	client.authState = "inited"
 
 	return client, nil
+}
+
+func (c *Client) Shutdown() {
+	c.shutdownOnce.Do(func() {
+		if c.listener != nil {
+			c.listener.Stop()
+		}
+		if c.cancelFunc != nil {
+			c.cancelFunc()
+		}
+		if c.tdlibClient != nil {
+			c.tdlibClient.DestroyInstance()
+		}
+	})
 }
 
 func (c *Client) GetAuthReadyChannel() <-chan struct{} {

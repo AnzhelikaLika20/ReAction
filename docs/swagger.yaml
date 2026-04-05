@@ -33,6 +33,7 @@ definitions:
         type: string
     required:
     - chat_ids
+    - messenger_account_id
     type: object
   handlers.CalendarURLResponse:
     properties:
@@ -45,8 +46,21 @@ definitions:
       code:
         example: "12345"
         type: string
+      messenger_account_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
     required:
     - code
+    - messenger_account_id
+    type: object
+  handlers.DeleteAccountRequest:
+    description: Подтверждение пароля для безвозвратного удаления учётной записи
+    properties:
+      password:
+        example: currentPassword123
+        type: string
+    required:
+    - password
     type: object
   handlers.ErrorResponse:
     description: Структура для возврата ошибок
@@ -84,10 +98,14 @@ definitions:
   handlers.PhoneRequest:
     description: Запрос для отправки номера телефона при авторизации в Telegram
     properties:
+      messenger_account_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
       phone_number:
         example: "+1234567890"
         type: string
     required:
+    - messenger_account_id
     - phone_number
     type: object
   handlers.RegisterRequest:
@@ -105,20 +123,45 @@ definitions:
     - password
     type: object
   handlers.SessionResponse:
-    description: SessionResponse состояние авторизации Telegram (tdlib) для текущего
-      session_id из JWT
+    description: SessionResponse состояние авторизации Telegram (tdlib) для указанного
+      messenger_account_id
     properties:
       auth_state:
         example: wait_code
         type: string
     type: object
+  handlers.TelegramInitRequest:
+    description: 'Тело POST /auth/telegram/init: номер для проверки дубликата до создания
+      записи и клиента tdlib'
+    properties:
+      phone_number:
+        example: "+79001234567"
+        type: string
+    required:
+    - phone_number
+    type: object
+  handlers.TelegramInitResponse:
+    description: 'Ответ после инициализации Telegram: id аккаунта мессенджера для
+      последующих шагов'
+    properties:
+      auth_state:
+        example: inited
+        type: string
+      messenger_account_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+    type: object
   handlers.TelegramPasswordRequest:
     description: Запрос для отправки пароля двухфакторной аутентификации Telegram
     properties:
+      messenger_account_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
       password:
         example: my2fapassword
         type: string
     required:
+    - messenger_account_id
     - password
     type: object
   handlers.TokenResponse:
@@ -267,26 +310,15 @@ paths:
       summary: Регистрация пользователя
       tags:
       - auth
-  /auth/session:
-    delete:
-      description: Удаляет запись сессии в БД по session_id из JWT. Клиент должен
-        удалить токен локально.
-      responses:
-        "204":
-          description: Успешный выход, тело пустое
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-      security:
-      - Bearer: []
-      summary: Выход из приложения
-      tags:
-      - auth
   /auth/session/status:
     get:
-      description: Текущее состояние tdlib для session_id из JWT (ожидание кода, готов
-        и т.д.).
+      description: Текущее состояние tdlib для messenger_account_id
+      parameters:
+      - description: UUID аккаунта мессенджера
+        in: query
+        name: messenger_account_id
+        required: true
+        type: string
       produces:
       - application/json
       responses:
@@ -294,6 +326,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/handlers.SessionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
@@ -341,15 +377,30 @@ paths:
       - application/json
       description: Запускает процесс подключения Telegram для текущего пользователя.
         Требуется затем POST /auth/telegram/phone с номером.
+      parameters:
+      - description: Номер телефона (международный формат)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.TelegramInitRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handlers.SessionResponse'
+            $ref: '#/definitions/handlers.TelegramInitResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
         "401":
           description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Номер уже привязан к другому аккаунту Telegram этого пользователя
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
         "500":
@@ -448,13 +499,13 @@ paths:
       - calendar
   /chats:
     get:
-      description: Возвращает список чатов Telegram с информацией о выборе. Только
-        для аккаунта, привязанного к текущей JWT-сессии (query messenger_account_id
-        должен совпадать или быть пустым).
+      description: Возвращает список чатов Telegram с информацией о выборе для указанного
+        messenger_account_id (tdlib-клиент должен быть запущен для этого аккаунта).
       parameters:
       - description: UUID аккаунта мессенджера
         in: query
         name: messenger_account_id
+        required: true
         type: string
       produces:
       - application/json
@@ -465,6 +516,10 @@ paths:
             items:
               $ref: '#/definitions/chats.ChatDTO'
             type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
@@ -480,11 +535,12 @@ paths:
       - chats
   /chats/selected:
     get:
-      description: Возвращает список ID выбранных чатов для аккаунта (query messenger_account_id).
+      description: Возвращает список ID выбранных чатов для аккаунта
       parameters:
       - description: UUID аккаунта мессенджера
         in: query
         name: messenger_account_id
+        required: true
         type: string
       produces:
       - application/json
@@ -516,7 +572,6 @@ paths:
       consumes:
       - application/json
       description: Сохраняет список выбранных чатов для указанного аккаунта мессенджера
-        (messenger_account_id в теле; если пусто — аккаунт текущей сессии).
       parameters:
       - description: Список ID чатов
         in: body
@@ -732,6 +787,46 @@ paths:
       tags:
       - scenarios
   /users/me:
+    delete:
+      consumes:
+      - application/json
+      description: Останавливает все Telegram-клиенты пользователя на сервере и удаляет
+        пользователя из БД (данные по CASCADE). Требуется текущий пароль.
+      parameters:
+      - description: Текущий пароль
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.DeleteAccountRequest'
+      responses:
+        "204":
+          description: Аккаунт удалён
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Неверный пароль
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Удалить учётную запись
+      tags:
+      - users
     get:
       description: Возвращает профиль по user_id из JWT. Телефон заполняется после
         успешного подключения Telegram.
@@ -757,8 +852,7 @@ paths:
       - users
   /users/me/messenger-accounts:
     get:
-      description: Список подключённых и ожидающих аккаунтов; is_active_for_session
-        — этот аккаунт сейчас в активном tdlib-клиенте для данного JWT session_id.
+      description: Список подключённых и ожидающих аккаунтов
       produces:
       - application/json
       responses:
@@ -775,6 +869,36 @@ paths:
       security:
       - Bearer: []
       summary: Аккаунты мессенджеров пользователя
+      tags:
+      - users
+  /users/me/messenger-accounts/{messenger_account_id}:
+    delete:
+      description: Удаляет запись user_messenger_accounts и останавливает tdlib-клиент
+        в памяти, если он был запущен
+      parameters:
+      - description: UUID аккаунта мессенджера
+        in: path
+        name: messenger_account_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Удалено
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Удалить привязку мессенджера
       tags:
       - users
   /webcal/{userIdBase64}/{signature}/calendar.ics:

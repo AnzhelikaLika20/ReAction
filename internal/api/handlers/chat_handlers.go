@@ -9,6 +9,7 @@ import (
 	"ReAction/internal/services/chats"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 )
 
 type ChatHandler struct {
@@ -24,50 +25,45 @@ func NewChatHandler(chatService *chats.ChatService, authService *auth.AuthServic
 }
 
 // @Summary Получить список чатов пользователя
-// @Description Возвращает список чатов Telegram с информацией о выборе. Только для аккаунта, привязанного к текущей JWT-сессии (query messenger_account_id должен совпадать или быть пустым).
+// @Description Возвращает список чатов Telegram с информацией о выборе для указанного messenger_account_id (tdlib-клиент должен быть запущен для этого аккаунта).
 // @Tags chats
 // @Produce json
 // @Security Bearer
-// @Param messenger_account_id query string false "UUID аккаунта мессенджера"
+// @Param messenger_account_id query string true "UUID аккаунта мессенджера"
 // @Success 200 {array} chats.ChatDTO
+// @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /chats [get]
 func (h *ChatHandler) GetUserChats(c *gin.Context) {
-	sessionId, exists := c.Get("session_id")
-	if !exists {
+	userID, ok := c.Get("user_id")
+	if !ok {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Не авторизован"})
 		return
 	}
 
-	userID, _ := c.Get("user_id")
+	messengerID := strings.TrimSpace(c.Query("messenger_account_id"))
+	if messengerID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "messenger_account_id is required"})
+		return
+	}
 
-	chatsList, err := h.authService.GetUserChats(c.Request.Context(), sessionId.(string))
+	if err := h.authService.EnsureMessengerAccountOwned(c.Request.Context(), messengerID, userID.(string)); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(http.StatusForbidden, ErrorResponse{Error: "messenger account not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	chatsList, err := h.authService.GetUserChats(c.Request.Context(), messengerID)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, auth.ErrTelegramNotConnected) {
 			status = http.StatusBadRequest
 		}
 		c.JSON(status, ErrorResponse{Error: err.Error()})
-		return
-	}
-
-	boundMID, err := h.authService.MessengerAccountIDForJWTSession(c.Request.Context(), sessionId.(string), userID.(string))
-	if err != nil {
-		status := http.StatusInternalServerError
-		if errors.Is(err, auth.ErrNoMessengerForSession) {
-			status = http.StatusBadRequest
-		}
-		c.JSON(status, ErrorResponse{Error: err.Error()})
-		return
-	}
-
-	requested := strings.TrimSpace(c.Query("messenger_account_id"))
-	messengerID := boundMID
-	if requested != "" && requested != boundMID {
-		c.JSON(http.StatusBadRequest, ErrorResponse{
-			Error: "Список чатов Telegram доступен только для аккаунта, подключённого в этой сессии. Выберите аккаунт с пометкой «текущая сессия».",
-		})
 		return
 	}
 
@@ -92,7 +88,7 @@ func (h *ChatHandler) GetUserChats(c *gin.Context) {
 }
 
 // @Summary Обновить выбранные чаты
-// @Description Сохраняет список выбранных чатов для указанного аккаунта мессенджера (messenger_account_id в теле; если пусто — аккаунт текущей сессии).
+// @Description Сохраняет список выбранных чатов для указанного аккаунта мессенджера
 // @Tags chats
 // @Accept json
 // @Produce json
@@ -109,23 +105,17 @@ func (h *ChatHandler) UpdateChatSelection(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Не авторизован"})
 		return
 	}
-	sessionID, exists := c.Get("session_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Не авторизован"})
-		return
-	}
-
 	var req chats.UpdateChatSelectionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	messengerID, err := h.authService.ResolveChatMessengerID(c.Request.Context(), sessionID.(string), userID.(string), req.MessengerAccountID)
+	messengerID, err := h.authService.ResolveChatMessengerID(c.Request.Context(), userID.(string), req.MessengerAccountID)
 	if err != nil {
 		status := http.StatusInternalServerError
 		switch {
-		case errors.Is(err, auth.ErrNoMessengerForSession), errors.Is(err, auth.ErrMessengerNotOwned):
+		case errors.Is(err, auth.ErrMessengerAccountIDRequired), errors.Is(err, auth.ErrMessengerNotOwned):
 			status = http.StatusBadRequest
 		}
 		c.JSON(status, ErrorResponse{Error: err.Error()})
@@ -141,11 +131,11 @@ func (h *ChatHandler) UpdateChatSelection(c *gin.Context) {
 }
 
 // @Summary Получить выбранные чаты
-// @Description Возвращает список ID выбранных чатов для аккаунта (query messenger_account_id).
+// @Description Возвращает список ID выбранных чатов для аккаунта
 // @Tags chats
 // @Produce json
 // @Security Bearer
-// @Param messenger_account_id query string false "UUID аккаунта мессенджера"
+// @Param messenger_account_id query string true "UUID аккаунта мессенджера"
 // @Success 200 {object} map[string][]int64
 // @Failure 401 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
@@ -156,17 +146,11 @@ func (h *ChatHandler) GetSelectedChats(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Не авторизован"})
 		return
 	}
-	sessionID, exists := c.Get("session_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Не авторизован"})
-		return
-	}
-
-	messengerID, err := h.authService.ResolveChatMessengerID(c.Request.Context(), sessionID.(string), userID.(string), c.Query("messenger_account_id"))
+	messengerID, err := h.authService.ResolveChatMessengerID(c.Request.Context(), userID.(string), c.Query("messenger_account_id"))
 	if err != nil {
 		status := http.StatusInternalServerError
 		switch {
-		case errors.Is(err, auth.ErrNoMessengerForSession), errors.Is(err, auth.ErrMessengerNotOwned):
+		case errors.Is(err, auth.ErrMessengerAccountIDRequired), errors.Is(err, auth.ErrMessengerNotOwned):
 			status = http.StatusBadRequest
 		}
 		c.JSON(status, ErrorResponse{Error: err.Error()})

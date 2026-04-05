@@ -11,6 +11,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deleteMessengerAccountForUser = `-- name: DeleteMessengerAccountForUser :one
+DELETE FROM user_messenger_accounts
+WHERE id = $1 AND user_id = $2
+RETURNING id
+`
+
+type DeleteMessengerAccountForUserParams struct {
+	ID     pgtype.UUID
+	UserID pgtype.UUID
+}
+
+func (q *Queries) DeleteMessengerAccountForUser(ctx context.Context, arg DeleteMessengerAccountForUserParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, deleteMessengerAccountForUser, arg.ID, arg.UserID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getLatestConnectedTelegramLabelByUserID = `-- name: GetLatestConnectedTelegramLabelByUserID :one
 SELECT label FROM user_messenger_accounts
 WHERE user_id = $1 AND connection_status = 'connected'::messenger_connection_status
@@ -23,31 +41,6 @@ func (q *Queries) GetLatestConnectedTelegramLabelByUserID(ctx context.Context, u
 	var label pgtype.Text
 	err := row.Scan(&label)
 	return label, err
-}
-
-const getLatestPendingTelegramAccountByUserID = `-- name: GetLatestPendingTelegramAccountByUserID :one
-SELECT id, user_id, provider, label, connection_status, selected_chat_ids, connected_at, created_at, updated_at
-FROM user_messenger_accounts
-WHERE user_id = $1 AND provider = 'telegram'::messenger_provider AND connection_status = 'pending'::messenger_connection_status
-ORDER BY created_at DESC
-LIMIT 1
-`
-
-func (q *Queries) GetLatestPendingTelegramAccountByUserID(ctx context.Context, userID pgtype.UUID) (UserMessengerAccount, error) {
-	row := q.db.QueryRow(ctx, getLatestPendingTelegramAccountByUserID, userID)
-	var i UserMessengerAccount
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.Provider,
-		&i.Label,
-		&i.ConnectionStatus,
-		&i.SelectedChatIds,
-		&i.ConnectedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
 }
 
 const getMessengerAccountByID = `-- name: GetMessengerAccountByID :one

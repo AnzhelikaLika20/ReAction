@@ -125,31 +125,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/session": {
-            "delete": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "Удаляет запись сессии в БД по session_id из JWT. Клиент должен удалить токен локально.",
-                "tags": [
-                    "auth"
-                ],
-                "summary": "Выход из приложения",
-                "responses": {
-                    "204": {
-                        "description": "Успешный выход, тело пустое"
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/auth/session/status": {
             "get": {
                 "security": [
@@ -157,7 +132,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Текущее состояние tdlib для session_id из JWT (ожидание кода, готов и т.д.).",
+                "description": "Текущее состояние tdlib для messenger_account_id",
                 "produces": [
                     "application/json"
                 ],
@@ -165,11 +140,26 @@ const docTemplate = `{
                     "auth"
                 ],
                 "summary": "Статус авторизации Telegram",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID аккаунта мессенджера",
+                        "name": "messenger_account_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handlers.SessionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
                         }
                     },
                     "401": {
@@ -250,15 +240,38 @@ const docTemplate = `{
                     "auth"
                 ],
                 "summary": "Инициализировать клиент Telegram (tdlib)",
+                "parameters": [
+                    {
+                        "description": "Номер телефона (международный формат)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.TelegramInitRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SessionResponse"
+                            "$ref": "#/definitions/handlers.TelegramInitResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Номер уже привязан к другому аккаунту Telegram этого пользователя",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
@@ -412,7 +425,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Возвращает список чатов Telegram с информацией о выборе. Только для аккаунта, привязанного к текущей JWT-сессии (query messenger_account_id должен совпадать или быть пустым).",
+                "description": "Возвращает список чатов Telegram с информацией о выборе для указанного messenger_account_id (tdlib-клиент должен быть запущен для этого аккаунта).",
                 "produces": [
                     "application/json"
                 ],
@@ -425,7 +438,8 @@ const docTemplate = `{
                         "type": "string",
                         "description": "UUID аккаунта мессенджера",
                         "name": "messenger_account_id",
-                        "in": "query"
+                        "in": "query",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -436,6 +450,12 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/chats.ChatDTO"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
                         }
                     },
                     "401": {
@@ -460,7 +480,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Возвращает список ID выбранных чатов для аккаунта (query messenger_account_id).",
+                "description": "Возвращает список ID выбранных чатов для аккаунта",
                 "produces": [
                     "application/json"
                 ],
@@ -473,7 +493,8 @@ const docTemplate = `{
                         "type": "string",
                         "description": "UUID аккаунта мессенджера",
                         "name": "messenger_account_id",
-                        "in": "query"
+                        "in": "query",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -512,7 +533,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Сохраняет список выбранных чатов для указанного аккаунта мессенджера (messenger_account_id в теле; если пусто — аккаунт текущей сессии).",
+                "description": "Сохраняет список выбранных чатов для указанного аккаунта мессенджера",
                 "consumes": [
                     "application/json"
                 ],
@@ -883,6 +904,67 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Останавливает все Telegram-клиенты пользователя на сервере и удаляет пользователя из БД (данные по CASCADE). Требуется текущий пароль.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Удалить учётную запись",
+                "parameters": [
+                    {
+                        "description": "Текущий пароль",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.DeleteAccountRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Аккаунт удалён"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Неверный пароль",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/users/me/messenger-accounts": {
@@ -892,7 +974,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Список подключённых и ожидающих аккаунтов; is_active_for_session — этот аккаунт сейчас в активном tdlib-клиенте для данного JWT session_id.",
+                "description": "Список подключённых и ожидающих аккаунтов",
                 "produces": [
                     "application/json"
                 ],
@@ -912,6 +994,52 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me/messenger-accounts/{messenger_account_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Удаляет запись user_messenger_accounts и останавливает tdlib-клиент в памяти, если он был запущен",
+                "tags": [
+                    "users"
+                ],
+                "summary": "Удалить привязку мессенджера",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID аккаунта мессенджера",
+                        "name": "messenger_account_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Удалено"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
@@ -1015,7 +1143,8 @@ const docTemplate = `{
         "chats.UpdateChatSelectionRequest": {
             "type": "object",
             "required": [
-                "chat_ids"
+                "chat_ids",
+                "messenger_account_id"
             ],
             "properties": {
                 "chat_ids": {
@@ -1041,12 +1170,30 @@ const docTemplate = `{
             "description": "Запрос для отправки кода подтверждения из Telegram",
             "type": "object",
             "required": [
-                "code"
+                "code",
+                "messenger_account_id"
             ],
             "properties": {
                 "code": {
                     "type": "string",
                     "example": "12345"
+                },
+                "messenger_account_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "handlers.DeleteAccountRequest": {
+            "description": "Подтверждение пароля для безвозвратного удаления учётной записи",
+            "type": "object",
+            "required": [
+                "password"
+            ],
+            "properties": {
+                "password": {
+                    "type": "string",
+                    "example": "currentPassword123"
                 }
             }
         },
@@ -1100,9 +1247,14 @@ const docTemplate = `{
             "description": "Запрос для отправки номера телефона при авторизации в Telegram",
             "type": "object",
             "required": [
+                "messenger_account_id",
                 "phone_number"
             ],
             "properties": {
+                "messenger_account_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
                 "phone_number": {
                     "type": "string",
                     "example": "+1234567890"
@@ -1129,7 +1281,7 @@ const docTemplate = `{
             }
         },
         "handlers.SessionResponse": {
-            "description": "SessionResponse состояние авторизации Telegram (tdlib) для текущего session_id из JWT",
+            "description": "SessionResponse состояние авторизации Telegram (tdlib) для указанного messenger_account_id",
             "type": "object",
             "properties": {
                 "auth_state": {
@@ -1138,13 +1290,45 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.TelegramInitRequest": {
+            "description": "Тело POST /auth/telegram/init: номер для проверки дубликата до создания записи и клиента tdlib",
+            "type": "object",
+            "required": [
+                "phone_number"
+            ],
+            "properties": {
+                "phone_number": {
+                    "type": "string",
+                    "example": "+79001234567"
+                }
+            }
+        },
+        "handlers.TelegramInitResponse": {
+            "description": "Ответ после инициализации Telegram: id аккаунта мессенджера для последующих шагов",
+            "type": "object",
+            "properties": {
+                "auth_state": {
+                    "type": "string",
+                    "example": "inited"
+                },
+                "messenger_account_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
         "handlers.TelegramPasswordRequest": {
             "description": "Запрос для отправки пароля двухфакторной аутентификации Telegram",
             "type": "object",
             "required": [
+                "messenger_account_id",
                 "password"
             ],
             "properties": {
+                "messenger_account_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
                 "password": {
                     "type": "string",
                     "example": "my2fapassword"

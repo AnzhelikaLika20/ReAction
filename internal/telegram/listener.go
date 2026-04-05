@@ -14,7 +14,6 @@ type Listener struct {
 	isRunning          bool
 	cancel             context.CancelFunc
 	kafkaProducer      *chat_updates.ChatUpdatesProducer
-	jwtSessionID       string
 	appUserID          string
 	messengerAccountID string
 	chatsService       *chats.ChatService
@@ -22,14 +21,13 @@ type Listener struct {
 
 func NewListener(
 	client *tdlib.Client,
-	jwtSessionID, appUserID, messengerAccountID string,
+	appUserID, messengerAccountID string,
 	chatsService *chats.ChatService,
 	kafkaProducer *chat_updates.ChatUpdatesProducer,
 ) *Listener {
 	return &Listener{
 		client:             client,
 		kafkaProducer:      kafkaProducer,
-		jwtSessionID:       jwtSessionID,
 		appUserID:          appUserID,
 		messengerAccountID: messengerAccountID,
 		chatsService:       chatsService,
@@ -131,7 +129,7 @@ func (l *Listener) sendToKafka(message *Message, eventType string) {
 
 	messageEvent := chat_updates.ChatUpdateMessageEvent{
 		UserID:             l.appUserID,
-		SessionID:          l.jwtSessionID,
+		SessionID:          l.messengerAccountID,
 		MessengerAccountID: l.messengerAccountID,
 		EventType:          eventType,
 		MessageID:          message.ID,

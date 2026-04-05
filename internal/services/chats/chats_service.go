@@ -25,7 +25,7 @@ type ChatDTO struct {
 }
 
 type UpdateChatSelectionRequest struct {
-	MessengerAccountID string  `json:"messenger_account_id"`
+	MessengerAccountID string  `json:"messenger_account_id" binding:"required"`
 	ChatIDs            []int64 `json:"chat_ids" binding:"required"`
 }
 
