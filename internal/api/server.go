@@ -91,6 +91,13 @@ func jwtMiddleware(authService *auth.AuthService) gin.HandlerFunc {
 }
 
 func isPublicRoute(path string) bool {
+	if strings.HasPrefix(path, "/auth/verify-email") {
+		return true
+	}
+	if path == "/auth/resend-verification" {
+		return true
+	}
+
 	publicRoutes := []string{
 		"/auth/register",
 		"/auth/login",

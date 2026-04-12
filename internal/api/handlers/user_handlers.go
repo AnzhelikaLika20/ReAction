@@ -12,9 +12,10 @@ import (
 
 // @Description Идентификатор пользователя, email и номер Telegram после привязки
 type MeResponse struct {
-	ID          string `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
-	Email       string `json:"email,omitempty" example:"user@example.com"`
-	PhoneNumber string `json:"phone_number,omitempty" example:"+79001234567"`
+	ID            string `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Email         string `json:"email,omitempty" example:"user@example.com"`
+	EmailVerified bool   `json:"email_verified" example:"true"`
+	PhoneNumber   string `json:"phone_number,omitempty" example:"+79001234567"`
 }
 
 // @Description Подтверждение пароля для безвозвратного удаления учётной записи
@@ -52,9 +53,10 @@ func GetMe(authService *auth.AuthService) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, MeResponse{
-			ID:          u.ID,
-			Email:       u.Email,
-			PhoneNumber: phone,
+			ID:            u.ID,
+			Email:         u.Email,
+			EmailVerified: u.EmailVerifiedAt != nil,
+			PhoneNumber:   phone,
 		})
 	}
 }

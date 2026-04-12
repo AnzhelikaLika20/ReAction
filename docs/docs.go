@@ -59,7 +59,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Аккаунт отключён",
+                        "description": "Аккаунт отключён или email не подтверждён",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
@@ -75,7 +75,7 @@ const docTemplate = `{
         },
         "/auth/register": {
             "post": {
-                "description": "Создаёт учётную запись по email и паролю и возвращает JWT (Bearer). Пароль хранится в виде bcrypt-хэша.",
+                "description": "Создаёт учётную запись по email и паролю и отправляет письмо со ссылкой подтверждения. JWT выдаётся после GET /auth/verify-email или входа с подтверждённым email.",
                 "consumes": [
                     "application/json"
                 ],
@@ -101,7 +101,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/handlers.TokenResponse"
+                            "$ref": "#/definitions/handlers.RegisterPendingResponse"
                         }
                     },
                     "400": {
@@ -112,6 +112,49 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Email уже зарегистрирован",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/resend-verification": {
+            "post": {
+                "description": "Если аккаунт с таким email существует и email ещё не подтверждён, отправляется новое письмо. Иначе ответ без ошибки (защита от перечисления адресов).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Отправить письмо подтверждения ещё раз",
+                "parameters": [
+                    {
+                        "description": "Email",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ResendVerificationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Письмо отправлено или не требуется"
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
@@ -380,6 +423,47 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/verify-email": {
+            "get": {
+                "description": "Проверяет одноразовый токен и возвращает JWT (Bearer).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Подтвердить email по ссылке из письма",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Токен из письма",
+                        "name": "token",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.TokenResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
@@ -1233,6 +1317,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "user@example.com"
                 },
+                "email_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
@@ -1261,6 +1349,16 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.RegisterPendingResponse": {
+            "description": "Ответ после регистрации: JWT не выдаётся, пока email не подтверждён по ссылке из письма",
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "Проверьте почту и перейдите по ссылке для подтверждения."
+                }
+            }
+        },
         "handlers.RegisterRequest": {
             "description": "Регистрация по email и паролю",
             "type": "object",
@@ -1277,6 +1375,19 @@ const docTemplate = `{
                     "type": "string",
                     "minLength": 8,
                     "example": "secret12345"
+                }
+            }
+        },
+        "handlers.ResendVerificationRequest": {
+            "description": "Повторная отправка письма с подтверждением",
+            "type": "object",
+            "required": [
+                "email"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
                 }
             }
         },

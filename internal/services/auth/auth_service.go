@@ -2,14 +2,19 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 	"time"
 
 	"ReAction/internal/config"
 	"ReAction/internal/kafka/chat_updates"
+	"ReAction/internal/mail"
 	"ReAction/internal/services/chats"
 	"ReAction/internal/storage"
 	"ReAction/internal/telegram"
@@ -23,6 +28,8 @@ import (
 var ErrInvalidCredentials = errors.New("invalid email or password")
 var ErrUserNotFound = errors.New("user not found")
 var ErrEmailTaken = errors.New("email already registered")
+var ErrEmailNotVerified = errors.New("email address is not verified")
+var ErrInvalidVerificationToken = errors.New("invalid or expired verification link")
 var ErrTelegramNotConnected = errors.New("telegram client not initialized; connect Telegram first")
 var ErrMessengerNotOwned = errors.New("messenger account not found")
 var ErrMessengerAccountIDRequired = errors.New("messenger_account_id is required")
@@ -38,12 +45,15 @@ type MessengerAccountItem struct {
 }
 
 type AuthService struct {
-	jwtService        *JWTService
-	userRepo          *storage.UserRepository
-	messengerRepo     *storage.MessengerAccountRepository
-	authManager       *telegram.AuthStateManager
-	chatService       *chats.ChatService
-	tdlibSessionsRoot string
+	jwtService           *JWTService
+	userRepo             *storage.UserRepository
+	messengerRepo        *storage.MessengerAccountRepository
+	authManager          *telegram.AuthStateManager
+	chatService          *chats.ChatService
+	tdlibSessionsRoot    string
+	mail                 *mail.Client
+	frontendPublicURL    string
+	verificationTokenTTL time.Duration
 }
 
 func NewAuthService(
@@ -53,15 +63,35 @@ func NewAuthService(
 	authManager *telegram.AuthStateManager,
 	chatService *chats.ChatService,
 	tdlibSessionsRoot string,
+	mailClient *mail.Client,
+	frontendPublicURL string,
 ) *AuthService {
 	return &AuthService{
-		jwtService:        jwtService,
-		userRepo:          userRepo,
-		messengerRepo:     messengerRepo,
-		authManager:       authManager,
-		chatService:       chatService,
-		tdlibSessionsRoot: tdlibSessionsRoot,
+		jwtService:           jwtService,
+		userRepo:             userRepo,
+		messengerRepo:        messengerRepo,
+		authManager:          authManager,
+		chatService:          chatService,
+		tdlibSessionsRoot:    tdlibSessionsRoot,
+		mail:                 mailClient,
+		frontendPublicURL:    strings.TrimRight(strings.TrimSpace(frontendPublicURL), "/"),
+		verificationTokenTTL: 48 * time.Hour,
 	}
+}
+
+func randomEmailVerificationValues() (plaintext string, sha256Hex string, err error) {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", "", err
+	}
+	plaintext = hex.EncodeToString(b[:])
+	sum := sha256.Sum256([]byte(plaintext))
+	return plaintext, hex.EncodeToString(sum[:]), nil
+}
+
+func hashEmailVerificationToken(plaintext string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(plaintext)))
+	return hex.EncodeToString(sum[:])
 }
 
 func (s *AuthService) issueToken(ctx context.Context, u *storage.User) (string, error) {
@@ -72,30 +102,96 @@ func (s *AuthService) issueToken(ctx context.Context, u *storage.User) (string, 
 	return s.jwtService.GenerateToken(u.ID, u.Email)
 }
 
-func (s *AuthService) Register(ctx context.Context, email, password string) (string, error) {
+func (s *AuthService) Register(ctx context.Context, email, password string) error {
 	existing, _, err := s.userRepo.GetUserByEmail(ctx, email)
 	if err != nil {
-		return "", err
+		return err
 	}
 	if existing != nil {
-		return "", ErrEmailTaken
+		return ErrEmailTaken
+	}
+
+	if s.mail.Configured() && s.frontendPublicURL == "" {
+		return fmt.Errorf("APP_FRONTEND_URL is required when SMTP is configured")
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return "", fmt.Errorf("hash password: %w", err)
+		return fmt.Errorf("hash password: %w", err)
 	}
 
 	u, err := s.userRepo.CreateUserWithCredentials(ctx, email, string(hash))
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return "", ErrEmailTaken
+			return ErrEmailTaken
+		}
+		return err
+	}
+
+	plainToken, tokenHash, err := randomEmailVerificationValues()
+	if err != nil {
+		return fmt.Errorf("verification token: %w", err)
+	}
+	expires := time.Now().Add(s.verificationTokenTTL)
+	if err := s.userRepo.SetEmailVerificationToken(ctx, u.ID, tokenHash, expires); err != nil {
+		return err
+	}
+
+	verifyURL := fmt.Sprintf("%s/verify-email?token=%s", s.frontendPublicURL, url.QueryEscape(plainToken))
+	if !s.mail.Configured() {
+		log.Printf("[AUTH] SMTP disabled; email verification link for %s: %s", email, verifyURL)
+	} else {
+		if err := s.mail.SendRegistrationVerification(email, verifyURL); err != nil {
+			return fmt.Errorf("send verification email: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *AuthService) VerifyEmail(ctx context.Context, plaintextToken string) (string, error) {
+	h := hashEmailVerificationToken(plaintextToken)
+	u, err := s.userRepo.VerifyEmailByTokenHash(ctx, h)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrInvalidVerificationToken
 		}
 		return "", err
 	}
-
 	return s.issueToken(ctx, u)
+}
+
+func (s *AuthService) ResendVerificationEmail(ctx context.Context, email string) error {
+	u, _, err := s.userRepo.GetUserByEmail(ctx, email)
+	if err != nil {
+		return err
+	}
+	if u == nil || u.EmailVerifiedAt != nil {
+		return nil
+	}
+
+	if s.mail.Configured() && s.frontendPublicURL == "" {
+		return fmt.Errorf("APP_FRONTEND_URL is required when SMTP is configured")
+	}
+
+	plainToken, tokenHash, err := randomEmailVerificationValues()
+	if err != nil {
+		return fmt.Errorf("verification token: %w", err)
+	}
+	expires := time.Now().Add(s.verificationTokenTTL)
+	if err := s.userRepo.SetEmailVerificationToken(ctx, u.ID, tokenHash, expires); err != nil {
+		return err
+	}
+
+	verifyURL := fmt.Sprintf("%s/verify-email?token=%s", s.frontendPublicURL, url.QueryEscape(plainToken))
+	if !s.mail.Configured() {
+		log.Printf("[AUTH] SMTP disabled; resent verification link for %s: %s", email, verifyURL)
+	} else {
+		if err := s.mail.SendRegistrationVerification(email, verifyURL); err != nil {
+			return fmt.Errorf("send verification email: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *AuthService) Login(ctx context.Context, email, password string) (string, error) {
@@ -109,6 +205,10 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (string
 
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
 		return "", ErrInvalidCredentials
+	}
+
+	if u.EmailVerifiedAt == nil {
+		return "", ErrEmailNotVerified
 	}
 
 	return s.issueToken(ctx, u)

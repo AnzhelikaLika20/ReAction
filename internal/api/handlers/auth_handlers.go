@@ -60,6 +60,16 @@ type TokenResponse struct {
 	ExpiresIn int    `json:"expires_in" example:"86400"`
 }
 
+// @Description Ответ после регистрации: JWT не выдаётся, пока email не подтверждён по ссылке из письма
+type RegisterPendingResponse struct {
+	Message string `json:"message" example:"Проверьте почту и перейдите по ссылке для подтверждения."`
+}
+
+// @Description Повторная отправка письма с подтверждением
+type ResendVerificationRequest struct {
+	Email string `json:"email" example:"user@example.com" binding:"required,email"`
+}
+
 // @Description SessionResponse состояние авторизации Telegram (tdlib) для указанного messenger_account_id
 type SessionResponse struct {
 	AuthState string `json:"auth_state" example:"wait_code"`
@@ -90,12 +100,12 @@ func NewAuthHandlers(
 }
 
 // @Summary Регистрация пользователя
-// @Description Создаёт учётную запись по email и паролю и возвращает JWT (Bearer). Пароль хранится в виде bcrypt-хэша.
+// @Description Создаёт учётную запись по email и паролю и отправляет письмо со ссылкой подтверждения. JWT выдаётся после GET /auth/verify-email или входа с подтверждённым email.
 // @Tags auth
 // @Accept json
 // @Produce json
 // @Param request body RegisterRequest true "Email и пароль (мин. 8 символов)"
-// @Success 201 {object} TokenResponse
+// @Success 201 {object} RegisterPendingResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse "Email уже зарегистрирован"
 // @Failure 500 {object} ErrorResponse
@@ -107,8 +117,7 @@ func (h *AuthHandlers) Register(c *gin.Context) {
 		return
 	}
 
-	token, err := h.authService.Register(c.Request.Context(), req.Email, req.Password)
-	if err != nil {
+	if err := h.authService.Register(c.Request.Context(), req.Email, req.Password); err != nil {
 		if errors.Is(err, auth.ErrEmailTaken) {
 			c.JSON(http.StatusConflict, ErrorResponse{Error: err.Error()})
 			return
@@ -117,10 +126,8 @@ func (h *AuthHandlers) Register(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, TokenResponse{
-		Token:     token,
-		TokenType: "Bearer",
-		ExpiresIn: int(h.authService.GetTokenDuration().Seconds()),
+	c.JSON(http.StatusCreated, RegisterPendingResponse{
+		Message: "Проверьте почту и перейдите по ссылке для подтверждения.",
 	})
 }
 
@@ -133,7 +140,7 @@ func (h *AuthHandlers) Register(c *gin.Context) {
 // @Success 200 {object} TokenResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse "Неверный email или пароль"
-// @Failure 403 {object} ErrorResponse "Аккаунт отключён"
+// @Failure 403 {object} ErrorResponse "Аккаунт отключён или email не подтверждён"
 // @Failure 500 {object} ErrorResponse
 // @Router /auth/login [post]
 func (h *AuthHandlers) Login(c *gin.Context) {
@@ -147,6 +154,10 @@ func (h *AuthHandlers) Login(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
 			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: err.Error()})
+			return
+		}
+		if errors.Is(err, auth.ErrEmailNotVerified) {
+			c.JSON(http.StatusForbidden, ErrorResponse{Error: err.Error()})
 			return
 		}
 		if err.Error() == "user is inactive" {
@@ -372,9 +383,68 @@ func (h *AuthHandlers) GetSessionStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, SessionResponse{AuthState: state})
 }
 
+// @Summary Подтвердить email по ссылке из письма
+// @Description Проверяет одноразовый токен и возвращает JWT (Bearer).
+// @Tags auth
+// @Produce json
+// @Param token query string true "Токен из письма"
+// @Success 200 {object} TokenResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /auth/verify-email [get]
+func (h *AuthHandlers) VerifyEmail(c *gin.Context) {
+	token := strings.TrimSpace(c.Query("token"))
+	if token == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "token is required"})
+		return
+	}
+
+	jwtToken, err := h.authService.VerifyEmail(c.Request.Context(), token)
+	if err != nil {
+		if errors.Is(err, auth.ErrInvalidVerificationToken) {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, TokenResponse{
+		Token:     jwtToken,
+		TokenType: "Bearer",
+		ExpiresIn: int(h.authService.GetTokenDuration().Seconds()),
+	})
+}
+
+// @Summary Отправить письмо подтверждения ещё раз
+// @Description Если аккаунт с таким email существует и email ещё не подтверждён, отправляется новое письмо. Иначе ответ без ошибки (защита от перечисления адресов).
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body ResendVerificationRequest true "Email"
+// @Success 204 "Письмо отправлено или не требуется"
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /auth/resend-verification [post]
+func (h *AuthHandlers) ResendVerification(c *gin.Context) {
+	var req ResendVerificationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	if err := h.authService.ResendVerificationEmail(c.Request.Context(), req.Email); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (h *AuthHandlers) RegisterAuthRoutes(router *gin.Engine) {
 	router.POST("/auth/register", h.Register)
 	router.POST("/auth/login", h.Login)
+	router.GET("/auth/verify-email", h.VerifyEmail)
+	router.POST("/auth/resend-verification", h.ResendVerification)
 
 	tg := router.Group("/auth/telegram")
 	tg.POST("/init", h.InitTelegramClient)
