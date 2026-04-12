@@ -16,7 +16,7 @@ INSERT INTO users (
     email,
     password_hash
 ) VALUES (lower($1), $2)
-RETURNING id, email, password_hash, is_active, created_at, updated_at
+RETURNING id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at
 `
 
 type CreateUserWithCredentialsParams struct {
@@ -25,12 +25,15 @@ type CreateUserWithCredentialsParams struct {
 }
 
 type CreateUserWithCredentialsRow struct {
-	ID           pgtype.UUID
-	Email        string
-	PasswordHash pgtype.Text
-	IsActive     pgtype.Bool
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	ID                         pgtype.UUID
+	Email                      string
+	PasswordHash               pgtype.Text
+	IsActive                   pgtype.Bool
+	CreatedAt                  pgtype.Timestamptz
+	UpdatedAt                  pgtype.Timestamptz
+	EmailVerifiedAt            pgtype.Timestamptz
+	EmailVerificationTokenHash pgtype.Text
+	EmailVerificationExpiresAt pgtype.Timestamptz
 }
 
 func (q *Queries) CreateUserWithCredentials(ctx context.Context, arg CreateUserWithCredentialsParams) (CreateUserWithCredentialsRow, error) {
@@ -43,6 +46,9 @@ func (q *Queries) CreateUserWithCredentials(ctx context.Context, arg CreateUserW
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EmailVerifiedAt,
+		&i.EmailVerificationTokenHash,
+		&i.EmailVerificationExpiresAt,
 	)
 	return i, err
 }
@@ -58,17 +64,20 @@ func (q *Queries) DeleteUser(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, is_active, created_at, updated_at FROM users 
+SELECT id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at FROM users 
 WHERE lower(email) = lower($1)
 `
 
 type GetUserByEmailRow struct {
-	ID           pgtype.UUID
-	Email        string
-	PasswordHash pgtype.Text
-	IsActive     pgtype.Bool
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	ID                         pgtype.UUID
+	Email                      string
+	PasswordHash               pgtype.Text
+	IsActive                   pgtype.Bool
+	CreatedAt                  pgtype.Timestamptz
+	UpdatedAt                  pgtype.Timestamptz
+	EmailVerifiedAt            pgtype.Timestamptz
+	EmailVerificationTokenHash pgtype.Text
+	EmailVerificationExpiresAt pgtype.Timestamptz
 }
 
 func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (GetUserByEmailRow, error) {
@@ -81,22 +90,28 @@ func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (GetUserByEm
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EmailVerifiedAt,
+		&i.EmailVerificationTokenHash,
+		&i.EmailVerificationExpiresAt,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, is_active, created_at, updated_at FROM users 
+SELECT id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at FROM users 
 WHERE id = $1
 `
 
 type GetUserByIDRow struct {
-	ID           pgtype.UUID
-	Email        string
-	PasswordHash pgtype.Text
-	IsActive     pgtype.Bool
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	ID                         pgtype.UUID
+	Email                      string
+	PasswordHash               pgtype.Text
+	IsActive                   pgtype.Bool
+	CreatedAt                  pgtype.Timestamptz
+	UpdatedAt                  pgtype.Timestamptz
+	EmailVerifiedAt            pgtype.Timestamptz
+	EmailVerificationTokenHash pgtype.Text
+	EmailVerificationExpiresAt pgtype.Timestamptz
 }
 
 func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDRow, error) {
@@ -109,8 +124,30 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDR
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EmailVerifiedAt,
+		&i.EmailVerificationTokenHash,
+		&i.EmailVerificationExpiresAt,
 	)
 	return i, err
+}
+
+const setUserEmailVerificationToken = `-- name: SetUserEmailVerificationToken :exec
+UPDATE users
+SET email_verification_token_hash = $2,
+    email_verification_expires_at = $3,
+    updated_at = NOW()
+WHERE id = $1
+`
+
+type SetUserEmailVerificationTokenParams struct {
+	ID                         pgtype.UUID
+	EmailVerificationTokenHash pgtype.Text
+	EmailVerificationExpiresAt pgtype.Timestamptz
+}
+
+func (q *Queries) SetUserEmailVerificationToken(ctx context.Context, arg SetUserEmailVerificationTokenParams) error {
+	_, err := q.db.Exec(ctx, setUserEmailVerificationToken, arg.ID, arg.EmailVerificationTokenHash, arg.EmailVerificationExpiresAt)
+	return err
 }
 
 const updateUserLastAuth = `-- name: UpdateUserLastAuth :exec
@@ -122,4 +159,45 @@ WHERE id = $1
 func (q *Queries) UpdateUserLastAuth(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, updateUserLastAuth, id)
 	return err
+}
+
+const verifyUserEmailByTokenHash = `-- name: VerifyUserEmailByTokenHash :one
+UPDATE users
+SET email_verified_at = NOW(),
+    email_verification_token_hash = NULL,
+    email_verification_expires_at = NULL,
+    updated_at = NOW()
+WHERE email_verification_token_hash = $1
+  AND email_verification_expires_at IS NOT NULL
+  AND email_verification_expires_at > NOW()
+RETURNING id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at
+`
+
+type VerifyUserEmailByTokenHashRow struct {
+	ID                         pgtype.UUID
+	Email                      string
+	PasswordHash               pgtype.Text
+	IsActive                   pgtype.Bool
+	CreatedAt                  pgtype.Timestamptz
+	UpdatedAt                  pgtype.Timestamptz
+	EmailVerifiedAt            pgtype.Timestamptz
+	EmailVerificationTokenHash pgtype.Text
+	EmailVerificationExpiresAt pgtype.Timestamptz
+}
+
+func (q *Queries) VerifyUserEmailByTokenHash(ctx context.Context, emailVerificationTokenHash pgtype.Text) (VerifyUserEmailByTokenHashRow, error) {
+	row := q.db.QueryRow(ctx, verifyUserEmailByTokenHash, emailVerificationTokenHash)
+	var i VerifyUserEmailByTokenHashRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.EmailVerifiedAt,
+		&i.EmailVerificationTokenHash,
+		&i.EmailVerificationExpiresAt,
+	)
+	return i, err
 }

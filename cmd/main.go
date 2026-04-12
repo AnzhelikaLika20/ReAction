@@ -5,6 +5,7 @@ import (
 	"ReAction/internal/config"
 	"ReAction/internal/kafka/chat_updates"
 	"ReAction/internal/kafka/user_actions"
+	"ReAction/internal/mail"
 	scenarios "ReAction/internal/services"
 	"ReAction/internal/services/ai"
 	"ReAction/internal/services/auth"
@@ -59,6 +60,14 @@ func main() {
 
 	authManager := telegram.NewAuthStateManager()
 
+	mailClient := mail.NewClient(mail.Config{
+		Host:     cfg.Mail.Host,
+		Port:     cfg.Mail.Port,
+		User:     cfg.Mail.User,
+		Password: cfg.Mail.Password,
+		From:     cfg.Mail.From,
+	})
+
 	authService := auth.NewAuthService(
 		jwtService,
 		userRepo,
@@ -66,6 +75,8 @@ func main() {
 		authManager,
 		chatService,
 		cfg.Telegram.SessionsRoot,
+		mailClient,
+		cfg.FrontendPublicURL,
 	)
 
 	scenarioService := scenarios.NewScenarioService(scenarioRepo)

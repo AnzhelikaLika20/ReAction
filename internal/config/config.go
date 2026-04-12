@@ -9,13 +9,23 @@ import (
 )
 
 type AppConfig struct {
-	Telegram TelegramConfig
-	Logging  LoggingConfig
-	Server   ServerConfig
-	Kafka    KafkaConfig
-	Database Database
-	JWT      JWTConfig
-	AIConfig AIConfig
+	Telegram          TelegramConfig
+	Logging           LoggingConfig
+	Server            ServerConfig
+	Kafka             KafkaConfig
+	Database          Database
+	JWT               JWTConfig
+	AIConfig          AIConfig
+	Mail              MailConfig
+	FrontendPublicURL string
+}
+
+type MailConfig struct {
+	Host     string
+	Port     string
+	User     string
+	Password string
+	From     string
 }
 
 type ServerConfig struct {
@@ -118,6 +128,15 @@ func Load() (*AppConfig, error) {
 		FolderID:       GetEnv("YANDEX_AI_FOLDER_ID", ""),
 		YandexIamToken: GetEnv("YANDEX_IAM_TOKEN", ""),
 	}
+
+	cfg.Mail = MailConfig{
+		Host:     GetEnv("SMTP_HOST", ""),
+		Port:     GetEnv("SMTP_PORT", "587"),
+		User:     GetEnv("SMTP_USER", ""),
+		Password: GetEnv("SMTP_PASSWORD", ""),
+		From:     GetEnv("SMTP_FROM", ""),
+	}
+	cfg.FrontendPublicURL = strings.TrimRight(strings.TrimSpace(GetEnv("APP_FRONTEND_URL", "http://localhost:5173")), "/")
 
 	return cfg, nil
 }

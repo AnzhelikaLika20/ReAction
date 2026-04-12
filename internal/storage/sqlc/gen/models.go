@@ -119,12 +119,15 @@ type Scenario struct {
 }
 
 type User struct {
-	IsActive     pgtype.Bool
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
-	ID           pgtype.UUID
-	Email        string
-	PasswordHash pgtype.Text
+	IsActive                   pgtype.Bool
+	CreatedAt                  pgtype.Timestamptz
+	UpdatedAt                  pgtype.Timestamptz
+	ID                         pgtype.UUID
+	Email                      string
+	PasswordHash               pgtype.Text
+	EmailVerifiedAt            pgtype.Timestamptz
+	EmailVerificationTokenHash pgtype.Text
+	EmailVerificationExpiresAt pgtype.Timestamptz
 }
 
 type UserMessengerAccount struct {

@@ -88,6 +88,9 @@ definitions:
       email:
         example: user@example.com
         type: string
+      email_verified:
+        example: true
+        type: boolean
       id:
         example: 550e8400-e29b-41d4-a716-446655440000
         type: string
@@ -108,6 +111,14 @@ definitions:
     - messenger_account_id
     - phone_number
     type: object
+  handlers.RegisterPendingResponse:
+    description: 'Ответ после регистрации: JWT не выдаётся, пока email не подтверждён
+      по ссылке из письма'
+    properties:
+      message:
+        example: Проверьте почту и перейдите по ссылке для подтверждения.
+        type: string
+    type: object
   handlers.RegisterRequest:
     description: Регистрация по email и паролю
     properties:
@@ -121,6 +132,15 @@ definitions:
     required:
     - email
     - password
+    type: object
+  handlers.ResendVerificationRequest:
+    description: Повторная отправка письма с подтверждением
+    properties:
+      email:
+        example: user@example.com
+        type: string
+    required:
+    - email
     type: object
   handlers.SessionResponse:
     description: SessionResponse состояние авторизации Telegram (tdlib) для указанного
@@ -265,7 +285,7 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
         "403":
-          description: Аккаунт отключён
+          description: Аккаунт отключён или email не подтверждён
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
         "500":
@@ -279,8 +299,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Создаёт учётную запись по email и паролю и возвращает JWT (Bearer).
-        Пароль хранится в виде bcrypt-хэша.
+      description: Создаёт учётную запись по email и паролю и отправляет письмо со
+        ссылкой подтверждения. JWT выдаётся после GET /auth/verify-email или входа
+        с подтверждённым email.
       parameters:
       - description: Email и пароль (мин. 8 символов)
         in: body
@@ -294,7 +315,7 @@ paths:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/handlers.TokenResponse'
+            $ref: '#/definitions/handlers.RegisterPendingResponse'
         "400":
           description: Bad Request
           schema:
@@ -308,6 +329,36 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Регистрация пользователя
+      tags:
+      - auth
+  /auth/resend-verification:
+    post:
+      consumes:
+      - application/json
+      description: Если аккаунт с таким email существует и email ещё не подтверждён,
+        отправляется новое письмо. Иначе ответ без ошибки (защита от перечисления
+        адресов).
+      parameters:
+      - description: Email
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.ResendVerificationRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Письмо отправлено или не требуется
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Отправить письмо подтверждения ещё раз
       tags:
       - auth
   /auth/session/status:
@@ -475,6 +526,33 @@ paths:
       security:
       - Bearer: []
       summary: Отправить номер телефона в Telegram
+      tags:
+      - auth
+  /auth/verify-email:
+    get:
+      description: Проверяет одноразовый токен и возвращает JWT (Bearer).
+      parameters:
+      - description: Токен из письма
+        in: query
+        name: token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.TokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Подтвердить email по ссылке из письма
       tags:
       - auth
   /calendar/url:

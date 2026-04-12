@@ -22,21 +22,32 @@ func NewUserRepository(queries *db.Queries) *UserRepository {
 }
 
 type User struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email,omitempty"`
-	IsActive  bool      `json:"is_active"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID              string     `json:"id"`
+	Email           string     `json:"email,omitempty"`
+	IsActive        bool       `json:"is_active"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	EmailVerifiedAt *time.Time `json:"-"`
 }
 
-func rowToUser(id pgtype.UUID, email string, isActive pgtype.Bool, createdAt, updatedAt pgtype.Timestamptz) *User {
-	return &User{
+func rowToUser(
+	id pgtype.UUID,
+	email string,
+	isActive pgtype.Bool,
+	createdAt, updatedAt, emailVerifiedAt pgtype.Timestamptz,
+) *User {
+	u := &User{
 		ID:        UUIDToString(id),
 		Email:     email,
 		IsActive:  isActive.Bool,
 		CreatedAt: createdAt.Time,
 		UpdatedAt: updatedAt.Time,
 	}
+	if emailVerifiedAt.Valid {
+		t := emailVerifiedAt.Time
+		u.EmailVerifiedAt = &t
+	}
+	return u
 }
 
 func (r *UserRepository) CreateUserWithCredentials(ctx context.Context, email, passwordHash string) (*User, error) {
@@ -47,7 +58,7 @@ func (r *UserRepository) CreateUserWithCredentials(ctx context.Context, email, p
 	if err != nil {
 		return nil, err
 	}
-	return rowToUser(row.ID, row.Email, row.IsActive, row.CreatedAt, row.UpdatedAt), nil
+	return rowToUser(row.ID, row.Email, row.IsActive, row.CreatedAt, row.UpdatedAt, row.EmailVerifiedAt), nil
 }
 
 func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*User, string, error) {
@@ -58,7 +69,7 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*Use
 		}
 		return nil, "", err
 	}
-	u := rowToUser(row.ID, row.Email, row.IsActive, row.CreatedAt, row.UpdatedAt)
+	u := rowToUser(row.ID, row.Email, row.IsActive, row.CreatedAt, row.UpdatedAt, row.EmailVerifiedAt)
 	hash := ""
 	if row.PasswordHash.Valid {
 		hash = row.PasswordHash.String
@@ -78,7 +89,7 @@ func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*User, err
 		}
 		return nil, err
 	}
-	return rowToUser(row.ID, row.Email, row.IsActive, row.CreatedAt, row.UpdatedAt), nil
+	return rowToUser(row.ID, row.Email, row.IsActive, row.CreatedAt, row.UpdatedAt, row.EmailVerifiedAt), nil
 }
 
 func (r *UserRepository) UpdateLastAuth(ctx context.Context, userID string) error {
@@ -110,4 +121,24 @@ func (r *UserRepository) DeleteUserByID(ctx context.Context, userID string) erro
 		return err
 	}
 	return r.queries.DeleteUser(ctx, uid)
+}
+
+func (r *UserRepository) SetEmailVerificationToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error {
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return err
+	}
+	return r.queries.SetUserEmailVerificationToken(ctx, db.SetUserEmailVerificationTokenParams{
+		ID:                         uid,
+		EmailVerificationTokenHash: pgtype.Text{String: tokenHash, Valid: true},
+		EmailVerificationExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	})
+}
+
+func (r *UserRepository) VerifyEmailByTokenHash(ctx context.Context, tokenHash string) (*User, error) {
+	row, err := r.queries.VerifyUserEmailByTokenHash(ctx, pgtype.Text{String: tokenHash, Valid: true})
+	if err != nil {
+		return nil, err
+	}
+	return rowToUser(row.ID, row.Email, row.IsActive, row.CreatedAt, row.UpdatedAt, row.EmailVerifiedAt), nil
 }
