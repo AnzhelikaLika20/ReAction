@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -56,8 +57,8 @@ func NewClientWithHTTPAuth(messengerAccountID string, appUserID string, cfg conf
 		UseFileDatabase:     true,
 		UseChatInfoDatabase: true,
 		UseTestDataCenter:   cfg.TestDc,
-		DatabaseDirectory:   "/app/tdlib-sessions/db/" + messengerAccountID,
-		FileDirectory:       "/app/tdlib-sessions/files/" + messengerAccountID,
+		DatabaseDirectory:   filepath.Join(cfg.SessionsRoot, "db", messengerAccountID),
+		FileDirectory:       filepath.Join(cfg.SessionsRoot, "files", messengerAccountID),
 		IgnoreFileNames:     false,
 	})
 

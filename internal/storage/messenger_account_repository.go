@@ -35,6 +35,18 @@ func (r *MessengerAccountRepository) InsertPendingTelegram(ctx context.Context, 
 	return UUIDToString(row.ID), nil
 }
 
+func (r *MessengerAccountRepository) GetMessengerAccountByID(ctx context.Context, accountID string) (db.UserMessengerAccount, error) {
+	aid, err := ParseUUID(accountID)
+	if err != nil {
+		return db.UserMessengerAccount{}, err
+	}
+	row, err := r.queries.GetMessengerAccountByID(ctx, aid)
+	if err != nil {
+		return db.UserMessengerAccount{}, err
+	}
+	return row, nil
+}
+
 func (r *MessengerAccountRepository) ListByUserID(ctx context.Context, userID string) ([]db.UserMessengerAccount, error) {
 	uid, err := ParseUUID(userID)
 	if err != nil {
