@@ -65,6 +65,7 @@ func main() {
 		messengerRepo,
 		authManager,
 		chatService,
+		cfg.Telegram.SessionsRoot,
 	)
 
 	scenarioService := scenarios.NewScenarioService(scenarioRepo)
@@ -81,6 +82,8 @@ func main() {
 		log.Panic("[KAFKA] Failed to create Kafka producer: %v", err)
 	}
 	defer chatUpdatesProducer.Close()
+
+	authService.RestoreTelegramClientsFromDisk(cfg.Telegram, chatUpdatesProducer)
 
 	userActionsConsumer, err := user_actions.NewUserActionConsumer(cfg.Kafka)
 	if err != nil {

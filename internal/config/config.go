@@ -24,10 +24,11 @@ type ServerConfig struct {
 }
 
 type TelegramConfig struct {
-	APIID    int32
-	APIHash  string
-	LogLevel int32
-	TestDc   bool
+	APIID        int32
+	APIHash      string
+	LogLevel     int32
+	TestDc       bool
+	SessionsRoot string
 }
 
 type LoggingConfig struct {
@@ -78,6 +79,7 @@ func Load() (*AppConfig, error) {
 	cfg.Telegram.LogLevel = int32(logLevel)
 
 	cfg.Telegram.TestDc = GetEnvAsBool("TEST_DC", false)
+	cfg.Telegram.SessionsRoot = GetEnv("TDLIB_SESSIONS_ROOT", "/app/tdlib-sessions")
 
 	log.Println("TEST_DC=", cfg.Telegram.TestDc)
 
