@@ -7,24 +7,25 @@ package db
 
 import (
 	"context"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const insertRefreshToken = `-- name: InsertRefreshToken :exec
-INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
-VALUES ($1, $2, $3)
+const deleteAllRefreshTokensForUser = `-- name: DeleteAllRefreshTokensForUser :exec
+DELETE FROM refresh_tokens WHERE user_id = $1
 `
 
-type InsertRefreshTokenParams struct {
-	UserID    pgtype.UUID
-	TokenHash string
-	ExpiresAt time.Time
+func (q *Queries) DeleteAllRefreshTokensForUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAllRefreshTokensForUser, userID)
+	return err
 }
 
-func (q *Queries) InsertRefreshToken(ctx context.Context, arg InsertRefreshTokenParams) error {
-	_, err := q.db.Exec(ctx, insertRefreshToken, arg.UserID, arg.TokenHash, arg.ExpiresAt)
+const deleteRefreshToken = `-- name: DeleteRefreshToken :exec
+DELETE FROM refresh_tokens WHERE token_hash = $1
+`
+
+func (q *Queries) DeleteRefreshToken(ctx context.Context, tokenHash string) error {
+	_, err := q.db.Exec(ctx, deleteRefreshToken, tokenHash)
 	return err
 }
 
@@ -33,14 +34,6 @@ SELECT id, user_id, token_hash, expires_at, created_at
 FROM refresh_tokens
 WHERE token_hash = $1 AND expires_at > NOW()
 `
-
-type RefreshToken struct {
-	ID        pgtype.UUID
-	UserID    pgtype.UUID
-	TokenHash string
-	ExpiresAt time.Time
-	CreatedAt pgtype.Timestamptz
-}
 
 func (q *Queries) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshToken, error) {
 	row := q.db.QueryRow(ctx, getRefreshTokenByHash, tokenHash)
@@ -55,20 +48,18 @@ func (q *Queries) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (
 	return i, err
 }
 
-const deleteRefreshToken = `-- name: DeleteRefreshToken :exec
-DELETE FROM refresh_tokens WHERE token_hash = $1
+const insertRefreshToken = `-- name: InsertRefreshToken :exec
+INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+VALUES ($1, $2, $3)
 `
 
-func (q *Queries) DeleteRefreshToken(ctx context.Context, tokenHash string) error {
-	_, err := q.db.Exec(ctx, deleteRefreshToken, tokenHash)
-	return err
+type InsertRefreshTokenParams struct {
+	UserID    pgtype.UUID
+	TokenHash string
+	ExpiresAt pgtype.Timestamptz
 }
 
-const deleteAllRefreshTokensForUser = `-- name: DeleteAllRefreshTokensForUser :exec
-DELETE FROM refresh_tokens WHERE user_id = $1
-`
-
-func (q *Queries) DeleteAllRefreshTokensForUser(ctx context.Context, userID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteAllRefreshTokensForUser, userID)
+func (q *Queries) InsertRefreshToken(ctx context.Context, arg InsertRefreshTokenParams) error {
+	_, err := q.db.Exec(ctx, insertRefreshToken, arg.UserID, arg.TokenHash, arg.ExpiresAt)
 	return err
 }

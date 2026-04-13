@@ -94,6 +94,14 @@ func (ns NullMessengerProvider) Value() (driver.Value, error) {
 	return string(ns.MessengerProvider), nil
 }
 
+type RefreshToken struct {
+	ID        pgtype.UUID
+	UserID    pgtype.UUID
+	TokenHash string
+	ExpiresAt pgtype.Timestamptz
+	CreatedAt pgtype.Timestamptz
+}
+
 type Reminder struct {
 	ID                  pgtype.UUID
 	ScenarioID          pgtype.UUID
