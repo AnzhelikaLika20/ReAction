@@ -73,6 +73,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/auth/refresh": {
+            "post": {
+                "description": "Принимает refresh-токен, инвалидирует его и возвращает новую пару токенов (rotation).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Обновить access-токен",
+                "parameters": [
+                    {
+                        "description": "Refresh-токен",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RefreshTokenRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.TokenResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Refresh-токен недействителен или истёк",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/register": {
             "post": {
                 "description": "Создаёт учётную запись по email и паролю и отправляет письмо со ссылкой подтверждения. JWT выдаётся после GET /auth/verify-email или входа с подтверждённым email.",
@@ -1349,6 +1401,18 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.RefreshTokenRequest": {
+            "description": "RefreshTokenRequest тело запроса для обновления токена",
+            "type": "object",
+            "required": [
+                "refresh_token"
+            ],
+            "properties": {
+                "refresh_token": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.RegisterPendingResponse": {
             "description": "Ответ после регистрации: JWT не выдаётся, пока email не подтверждён по ссылке из письма",
             "type": "object",
@@ -1453,6 +1517,10 @@ const docTemplate = `{
                 "expires_in": {
                     "type": "integer",
                     "example": 86400
+                },
+                "refresh_token": {
+                    "type": "string",
+                    "example": "a3f1c2..."
                 },
                 "token": {
                     "type": "string",

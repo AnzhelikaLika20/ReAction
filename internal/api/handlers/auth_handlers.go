@@ -55,9 +55,15 @@ type ErrorResponse struct {
 
 // @Description TokenResponse структура для возврата JWT после регистрации или входа
 type TokenResponse struct {
-	Token     string `json:"token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
-	TokenType string `json:"token_type" example:"Bearer"`
-	ExpiresIn int    `json:"expires_in" example:"86400"`
+	Token        string `json:"token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
+	RefreshToken string `json:"refresh_token" example:"a3f1c2..."`
+	TokenType    string `json:"token_type" example:"Bearer"`
+	ExpiresIn    int    `json:"expires_in" example:"86400"`
+}
+
+// @Description RefreshTokenRequest тело запроса для обновления токена
+type RefreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
 }
 
 // @Description Ответ после регистрации: JWT не выдаётся, пока email не подтверждён по ссылке из письма
@@ -150,7 +156,7 @@ func (h *AuthHandlers) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := h.authService.Login(c.Request.Context(), req.Email, req.Password)
+	pair, err := h.authService.Login(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
 			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: err.Error()})
@@ -169,9 +175,10 @@ func (h *AuthHandlers) Login(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, TokenResponse{
-		Token:     token,
-		TokenType: "Bearer",
-		ExpiresIn: int(h.authService.GetTokenDuration().Seconds()),
+		Token:        pair.AccessToken,
+		RefreshToken: pair.RefreshToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    int(h.authService.GetTokenDuration().Seconds()),
 	})
 }
 
@@ -399,7 +406,7 @@ func (h *AuthHandlers) VerifyEmail(c *gin.Context) {
 		return
 	}
 
-	jwtToken, err := h.authService.VerifyEmail(c.Request.Context(), token)
+	pair, err := h.authService.VerifyEmail(c.Request.Context(), token)
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidVerificationToken) {
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
@@ -410,9 +417,10 @@ func (h *AuthHandlers) VerifyEmail(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, TokenResponse{
-		Token:     jwtToken,
-		TokenType: "Bearer",
-		ExpiresIn: int(h.authService.GetTokenDuration().Seconds()),
+		Token:        pair.AccessToken,
+		RefreshToken: pair.RefreshToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    int(h.authService.GetTokenDuration().Seconds()),
 	})
 }
 
@@ -440,9 +448,46 @@ func (h *AuthHandlers) ResendVerification(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// @Summary Обновить access-токен
+// @Description Принимает refresh-токен, инвалидирует его и возвращает новую пару токенов (rotation).
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body RefreshTokenRequest true "Refresh-токен"
+// @Success 200 {object} TokenResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse "Refresh-токен недействителен или истёк"
+// @Failure 500 {object} ErrorResponse
+// @Router /auth/refresh [post]
+func (h *AuthHandlers) RefreshToken(c *gin.Context) {
+	var req RefreshTokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	pair, err := h.authService.Refresh(c.Request.Context(), req.RefreshToken)
+	if err != nil {
+		if errors.Is(err, auth.ErrInvalidRefreshToken) || errors.Is(err, auth.ErrUserNotFound) {
+			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, TokenResponse{
+		Token:        pair.AccessToken,
+		RefreshToken: pair.RefreshToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    int(h.authService.GetTokenDuration().Seconds()),
+	})
+}
+
 func (h *AuthHandlers) RegisterAuthRoutes(router *gin.Engine) {
 	router.POST("/auth/register", h.Register)
 	router.POST("/auth/login", h.Login)
+	router.POST("/auth/refresh", h.RefreshToken)
 	router.GET("/auth/verify-email", h.VerifyEmail)
 	router.POST("/auth/resend-verification", h.ResendVerification)
 

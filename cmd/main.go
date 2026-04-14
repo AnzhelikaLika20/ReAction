@@ -48,6 +48,7 @@ func main() {
 
 	userRepo := storage.NewUserRepository(dbStorage.Queries)
 	messengerRepo := storage.NewMessengerAccountRepository(dbStorage.Queries)
+	refreshTokenRepo := storage.NewRefreshTokenRepository(dbStorage.Queries)
 	scenarioRepo := storage.NewScenarioRepository(dbStorage.Queries)
 	reminderRepo := storage.NewReminderRepository(dbStorage.Queries)
 	chatRepo := storage.NewChatRepository(dbStorage.Queries)
@@ -72,6 +73,7 @@ func main() {
 		jwtService,
 		userRepo,
 		messengerRepo,
+		refreshTokenRepo,
 		authManager,
 		chatService,
 		cfg.Telegram.SessionsRoot,

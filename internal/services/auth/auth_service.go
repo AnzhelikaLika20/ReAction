@@ -30,6 +30,7 @@ var ErrUserNotFound = errors.New("user not found")
 var ErrEmailTaken = errors.New("email already registered")
 var ErrEmailNotVerified = errors.New("email address is not verified")
 var ErrInvalidVerificationToken = errors.New("invalid or expired verification link")
+var ErrInvalidRefreshToken = errors.New("invalid or expired refresh token")
 var ErrTelegramNotConnected = errors.New("telegram client not initialized; connect Telegram first")
 var ErrMessengerNotOwned = errors.New("messenger account not found")
 var ErrMessengerAccountIDRequired = errors.New("messenger_account_id is required")
@@ -44,22 +45,30 @@ type MessengerAccountItem struct {
 	IsActiveForSession bool   `json:"is_active_for_session"`
 }
 
+type TokenPair struct {
+	AccessToken  string
+	RefreshToken string
+}
+
 type AuthService struct {
 	jwtService           *JWTService
 	userRepo             *storage.UserRepository
 	messengerRepo        *storage.MessengerAccountRepository
+	refreshTokenRepo     *storage.RefreshTokenRepository
 	authManager          *telegram.AuthStateManager
 	chatService          *chats.ChatService
 	tdlibSessionsRoot    string
 	mail                 *mail.Client
 	frontendPublicURL    string
 	verificationTokenTTL time.Duration
+	refreshTokenTTL      time.Duration
 }
 
 func NewAuthService(
 	jwtService *JWTService,
 	userRepo *storage.UserRepository,
 	messengerRepo *storage.MessengerAccountRepository,
+	refreshTokenRepo *storage.RefreshTokenRepository,
 	authManager *telegram.AuthStateManager,
 	chatService *chats.ChatService,
 	tdlibSessionsRoot string,
@@ -70,12 +79,14 @@ func NewAuthService(
 		jwtService:           jwtService,
 		userRepo:             userRepo,
 		messengerRepo:        messengerRepo,
+		refreshTokenRepo:     refreshTokenRepo,
 		authManager:          authManager,
 		chatService:          chatService,
 		tdlibSessionsRoot:    tdlibSessionsRoot,
 		mail:                 mailClient,
 		frontendPublicURL:    strings.TrimRight(strings.TrimSpace(frontendPublicURL), "/"),
 		verificationTokenTTL: 48 * time.Hour,
+		refreshTokenTTL:      30 * 24 * time.Hour,
 	}
 }
 
@@ -94,12 +105,59 @@ func hashEmailVerificationToken(plaintext string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (s *AuthService) issueToken(ctx context.Context, u *storage.User) (string, error) {
+func generateRefreshTokenValues() (plaintext string, sha256Hex string, err error) {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", "", err
+	}
+	plaintext = hex.EncodeToString(b[:])
+	sum := sha256.Sum256([]byte(plaintext))
+	return plaintext, hex.EncodeToString(sum[:]), nil
+}
+
+func hashRefreshToken(plaintext string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(plaintext)))
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *AuthService) issueTokenPair(ctx context.Context, u *storage.User) (TokenPair, error) {
 	if !u.IsActive {
-		return "", errors.New("user is inactive")
+		return TokenPair{}, errors.New("user is inactive")
 	}
 	_ = s.userRepo.UpdateLastAuth(ctx, u.ID)
-	return s.jwtService.GenerateToken(u.ID, u.Email)
+
+	accessToken, err := s.jwtService.GenerateToken(u.ID, u.Email)
+	if err != nil {
+		return TokenPair{}, err
+	}
+
+	plainRefresh, refreshHash, err := generateRefreshTokenValues()
+	if err != nil {
+		return TokenPair{}, fmt.Errorf("generate refresh token: %w", err)
+	}
+	if err := s.refreshTokenRepo.Insert(ctx, u.ID, refreshHash, time.Now().Add(s.refreshTokenTTL)); err != nil {
+		return TokenPair{}, fmt.Errorf("store refresh token: %w", err)
+	}
+
+	return TokenPair{AccessToken: accessToken, RefreshToken: plainRefresh}, nil
+}
+
+func (s *AuthService) Refresh(ctx context.Context, plainRefreshToken string) (TokenPair, error) {
+	h := hashRefreshToken(plainRefreshToken)
+	userID, err := s.refreshTokenRepo.GetByHash(ctx, h)
+	if err != nil {
+		return TokenPair{}, ErrInvalidRefreshToken
+	}
+
+	if err := s.refreshTokenRepo.Delete(ctx, h); err != nil {
+		return TokenPair{}, fmt.Errorf("revoke refresh token: %w", err)
+	}
+
+	u, err := s.userRepo.GetUserByID(ctx, userID)
+	if err != nil || u == nil {
+		return TokenPair{}, ErrUserNotFound
+	}
+	return s.issueTokenPair(ctx, u)
 }
 
 func (s *AuthService) Register(ctx context.Context, email, password string) error {
@@ -149,16 +207,16 @@ func (s *AuthService) Register(ctx context.Context, email, password string) erro
 	return nil
 }
 
-func (s *AuthService) VerifyEmail(ctx context.Context, plaintextToken string) (string, error) {
+func (s *AuthService) VerifyEmail(ctx context.Context, plaintextToken string) (TokenPair, error) {
 	h := hashEmailVerificationToken(plaintextToken)
 	u, err := s.userRepo.VerifyEmailByTokenHash(ctx, h)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrInvalidVerificationToken
+			return TokenPair{}, ErrInvalidVerificationToken
 		}
-		return "", err
+		return TokenPair{}, err
 	}
-	return s.issueToken(ctx, u)
+	return s.issueTokenPair(ctx, u)
 }
 
 func (s *AuthService) ResendVerificationEmail(ctx context.Context, email string) error {
@@ -194,24 +252,24 @@ func (s *AuthService) ResendVerificationEmail(ctx context.Context, email string)
 	return nil
 }
 
-func (s *AuthService) Login(ctx context.Context, email, password string) (string, error) {
+func (s *AuthService) Login(ctx context.Context, email, password string) (TokenPair, error) {
 	u, hash, err := s.userRepo.GetUserByEmail(ctx, email)
 	if err != nil {
-		return "", err
+		return TokenPair{}, err
 	}
 	if u == nil || hash == "" {
-		return "", ErrInvalidCredentials
+		return TokenPair{}, ErrInvalidCredentials
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
-		return "", ErrInvalidCredentials
+		return TokenPair{}, ErrInvalidCredentials
 	}
 
 	if u.EmailVerifiedAt == nil {
-		return "", ErrEmailNotVerified
+		return TokenPair{}, ErrEmailNotVerified
 	}
 
-	return s.issueToken(ctx, u)
+	return s.issueTokenPair(ctx, u)
 }
 
 func (s *AuthService) EnsureMessengerAccountOwned(ctx context.Context, messengerAccountID, userID string) error {

@@ -101,6 +101,7 @@ func isPublicRoute(path string) bool {
 	publicRoutes := []string{
 		"/auth/register",
 		"/auth/login",
+		"/auth/refresh",
 		"/ping",
 		"/webcal/",
 		"/swagger/",
