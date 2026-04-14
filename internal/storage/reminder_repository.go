@@ -57,6 +57,18 @@ func (r *ReminderRepository) Create(ctx context.Context, p CreateReminderRecordP
 	return row, nil
 }
 
+func (r *ReminderRepository) ListRecentForChat(ctx context.Context, userID string, chatID int64, since time.Time) ([]db.Reminder, error) {
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return nil, err
+	}
+	return r.q.ListRecentRemindersForChat(ctx, db.ListRecentRemindersForChatParams{
+		UserID:    uid,
+		ChatID:    pgtype.Int8{Int64: chatID, Valid: true},
+		CreatedAt: pgtype.Timestamptz{Time: since.UTC(), Valid: true},
+	})
+}
+
 func (r *ReminderRepository) ListForUserInRange(ctx context.Context, userID string, from, to time.Time) ([]db.Reminder, error) {
 	uid, err := ParseUUID(userID)
 	if err != nil {

@@ -23,6 +23,11 @@ type UserScenarioForAI struct {
 	TriggerPhrase string `json:"trigger_phrase"`
 }
 
+type ExistingReminderForAI struct {
+	Title    string `json:"title"`
+	DateTime string `json:"datetime"`
+}
+
 type ReminderFromAI struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`

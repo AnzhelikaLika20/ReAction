@@ -85,7 +85,7 @@ func (s *AIService) CheckMessageWithHistory(
 	history []string,
 	contextType string,
 ) (*CheckResult, error) {
-	return s.CheckMessageWithHistoryAndScenarios(ctx, history, contextType, nil)
+	return s.CheckMessageWithHistoryAndScenarios(ctx, history, contextType, nil, nil)
 }
 
 func (s *AIService) CheckMessageWithHistoryAndScenarios(
@@ -93,8 +93,9 @@ func (s *AIService) CheckMessageWithHistoryAndScenarios(
 	history []string,
 	contextType string,
 	scenarios []UserScenarioForAI,
+	existingReminders []ExistingReminderForAI,
 ) (*CheckResult, error) {
-	return s.checkWithHistoryAndScenarios(ctx, history, contextType, scenarios)
+	return s.checkWithHistoryAndScenarios(ctx, history, contextType, scenarios, existingReminders)
 }
 
 func (s *AIService) checkWithHistoryAndScenarios(
@@ -102,6 +103,7 @@ func (s *AIService) checkWithHistoryAndScenarios(
 	history []string,
 	contextType string,
 	scenarios []UserScenarioForAI,
+	existingReminders []ExistingReminderForAI,
 ) (*CheckResult, error) {
 	if len(history) == 0 {
 		return nil, fmt.Errorf("empty message history")
@@ -142,6 +144,19 @@ func (s *AIService) checkWithHistoryAndScenarios(
 		prompt += `
 
 Список сценариев в этом запросе пуст: всегда scenario_id="".`
+	}
+
+	if len(existingReminders) > 0 {
+		raw, err := json.Marshal(existingReminders)
+		if err != nil {
+			return nil, fmt.Errorf("marshal existing reminders: %w", err)
+		}
+		prompt += `
+
+Напоминания, уже поставленные по этому чату за последние 30 минут (JSON; title — название, datetime — время события):
+` + string(raw) + `
+
+Если последнее сообщение относится к той же договорённости, что уже есть в списке выше (совпадает смысл и/или время) — это дубликат: detected=false.`
 	}
 
 	prompt += `
