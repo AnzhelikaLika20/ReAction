@@ -111,6 +111,14 @@ definitions:
     - messenger_account_id
     - phone_number
     type: object
+  handlers.RefreshTokenRequest:
+    description: RefreshTokenRequest тело запроса для обновления токена
+    properties:
+      refresh_token:
+        type: string
+    required:
+    - refresh_token
+    type: object
   handlers.RegisterPendingResponse:
     description: 'Ответ после регистрации: JWT не выдаётся, пока email не подтверждён
       по ссылке из письма'
@@ -190,6 +198,9 @@ definitions:
       expires_in:
         example: 86400
         type: integer
+      refresh_token:
+        example: a3f1c2...
+        type: string
       token:
         example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
         type: string
@@ -293,6 +304,41 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Вход в приложение
+      tags:
+      - auth
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Принимает refresh-токен, инвалидирует его и возвращает новую пару
+        токенов (rotation).
+      parameters:
+      - description: Refresh-токен
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.RefreshTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.TokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Refresh-токен недействителен или истёк
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Обновить access-токен
       tags:
       - auth
   /auth/register:

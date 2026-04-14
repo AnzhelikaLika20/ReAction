@@ -29,7 +29,7 @@ func (r *RefreshTokenRepository) Insert(ctx context.Context, userID, tokenHash s
 	return r.queries.InsertRefreshToken(ctx, db.InsertRefreshTokenParams{
 		UserID:    uid,
 		TokenHash: tokenHash,
-		ExpiresAt: expiresAt,
+		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
 	})
 }
 
