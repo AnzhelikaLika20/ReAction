@@ -22,31 +22,31 @@ const aiContextMessageCount = 6
 const maxStoredMessagesPerChat = 128
 
 type ChatUpdatesConsumer struct {
-	reader                  *kafka.Reader
-	config                  config.KafkaConfig
-	topic                   string
-	isRunning               bool
-	cancel                  context.CancelFunc
-	mu                      sync.RWMutex
-	userActionProducer      *user_actions.UserActionProducer
-	aiService               *ai.AIService
-	scenarioRepo            *storage.ScenarioRepository
-	reminderRepo            *storage.ReminderRepository
-	historyMu               sync.Mutex
-	recentByChat            map[string][]string    // user_id+chat_id -> тексты по порядку
-	recentTimestampsByChat  map[string][]time.Time // user_id+chat_id -> timestamps по порядку
+	reader                 *kafka.Reader
+	config                 config.KafkaConfig
+	topic                  string
+	isRunning              bool
+	cancel                 context.CancelFunc
+	mu                     sync.RWMutex
+	userActionProducer     *user_actions.UserActionProducer
+	aiService              *ai.AIService
+	scenarioRepo           *storage.ScenarioRepository
+	reminderRepo           *storage.ReminderRepository
+	historyMu              sync.Mutex
+	recentByChat           map[string][]string    // user_id+chat_id -> тексты по порядку
+	recentTimestampsByChat map[string][]time.Time // user_id+chat_id -> timestamps по порядку
 }
 
 type ConversationMessage struct {
-	UserID    string `json:"user_id,omitempty"`
-	SessionID string `json:"session_id"`
-	EventType string `json:"event_type"`
-	ChatID    int64  `json:"chat_id"`
-	ChatTitle string `json:"chat_title,omitempty"`
-	Text      string `json:"text"`
-	SenderID  int64  `json:"sender_id"`
-	IsOutgoing bool  `json:"is_outgoing"`
-	Timestamp int64  `json:"timestamp"`
+	UserID     string `json:"user_id,omitempty"`
+	SessionID  string `json:"session_id"`
+	EventType  string `json:"event_type"`
+	ChatID     int64  `json:"chat_id"`
+	ChatTitle  string `json:"chat_title,omitempty"`
+	Text       string `json:"text"`
+	SenderID   int64  `json:"sender_id"`
+	IsOutgoing bool   `json:"is_outgoing"`
+	Timestamp  int64  `json:"timestamp"`
 }
 
 func NewChatUpdatesConsumer(
