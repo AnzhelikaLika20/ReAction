@@ -215,14 +215,15 @@ func (c *ChatUpdatesConsumer) ScheduleActionIfNeeded(msg ConversationMessage) {
 		} else {
 			for _, row := range rows {
 				existingReminders = append(existingReminders, ai.ExistingReminderForAI{
-					Title:    row.Title,
-					DateTime: row.StartsAt.Time.Format(time.RFC3339),
+					ScenarioId: row.ScenarioID.String(),
+					Title:      row.Title,
+					DateTime:   row.StartsAt.Time.Format(time.RFC3339),
 				})
 			}
 		}
 	}
 
-	result, aiErr := c.aiService.CheckMessageWithHistoryAndScenarios(ctx, window, "promise", aiScenarios, existingReminders)
+	result, aiErr := c.aiService.CheckMessageWithHistoryAndScenarios(ctx, window, aiScenarios, existingReminders)
 	if aiErr != nil {
 		log.Println("Failed to check message with AI",
 			"chat_id", msg.ChatID, "error", aiErr)

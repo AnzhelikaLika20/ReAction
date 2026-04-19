@@ -24,8 +24,9 @@ type UserScenarioForAI struct {
 }
 
 type ExistingReminderForAI struct {
-	Title    string `json:"title"`
-	DateTime string `json:"datetime"`
+	ScenarioId string `json:"scenario_id"`
+	Title      string `json:"title"`
+	DateTime   string `json:"datetime"`
 }
 
 type ReminderFromAI struct {

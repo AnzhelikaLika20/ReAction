@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"ReAction/internal/config"
@@ -22,9 +21,8 @@ const (
 )
 
 type AIService struct {
-	config          config.AIConfig
-	httpClient      *http.Client
-	promptTemplates map[string]string
+	config     config.AIConfig
+	httpClient *http.Client
 }
 
 func NewYandexGPTService(cfg *config.AppConfig) (*AIService, error) {
@@ -40,12 +38,10 @@ func NewYandexGPTService(cfg *config.AppConfig) (*AIService, error) {
 	}
 
 	service := &AIService{
-		config:          cfg.AIConfig,
-		httpClient:      httpClient,
-		promptTemplates: make(map[string]string),
+		config:     cfg.AIConfig,
+		httpClient: httpClient,
 	}
 
-	service.initPromptTemplates()
 	return service, nil
 }
 
@@ -57,112 +53,67 @@ func (s *AIService) setAuthHeader(req *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+s.config.YandexIamToken)
 }
 
-func (s *AIService) initPromptTemplates() {
-	s.promptTemplates["promise"] = `Ты анализируешь сообщения на наличие обещаний или обязательств. 
-Определи, содержит ли сообщение обещание что-то сделать. Обрати внимание на слова:
-"обещаю", "гарантирую", "обязательно", "сделаю", "выполню", "постараюсь", "пообещал", "договорились".
-`
+func getScenariosToSearch(scenarios []UserScenarioForAI, existingReminders []ExistingReminderForAI) []UserScenarioForAI {
+	existing := make(map[string]struct{})
+	for _, r := range existingReminders {
+		existing[r.ScenarioId] = struct{}{}
+	}
 
-	s.promptTemplates["deadline"] = `Ты анализируешь сообщения на наличие сроков, дедлайнов или временных обещаний.
-Найди любые упоминания времени: "завтра", "к пятнице", "через 2 дня", "до 18:00", "к концу недели".
-`
+	var missing []UserScenarioForAI
+	for _, s := range scenarios {
+		if _, found := existing[s.ID]; !found {
+			missing = append(missing, s)
+		}
+	}
 
-	s.promptTemplates["intent"] = `Ты анализируешь сообщения на наличие намерений или планов.
-Определи, выражает ли сообщение намерение что-то сделать: "хочу", "планирую", "собираюсь", "мечтаю", "надо бы".
-`
-}
-
-func (s *AIService) CheckMessage(
-	ctx context.Context,
-	message string,
-	contextType string,
-) (*CheckResult, error) {
-	return s.CheckMessageWithHistory(ctx, []string{message}, contextType)
-}
-
-func (s *AIService) CheckMessageWithHistory(
-	ctx context.Context,
-	history []string,
-	contextType string,
-) (*CheckResult, error) {
-	return s.CheckMessageWithHistoryAndScenarios(ctx, history, contextType, nil, nil)
+	return missing
 }
 
 func (s *AIService) CheckMessageWithHistoryAndScenarios(
 	ctx context.Context,
 	history []string,
-	contextType string,
-	scenarios []UserScenarioForAI,
-	existingReminders []ExistingReminderForAI,
-) (*CheckResult, error) {
-	return s.checkWithHistoryAndScenarios(ctx, history, contextType, scenarios, existingReminders)
-}
-
-func (s *AIService) checkWithHistoryAndScenarios(
-	ctx context.Context,
-	history []string,
-	contextType string,
 	scenarios []UserScenarioForAI,
 	existingReminders []ExistingReminderForAI,
 ) (*CheckResult, error) {
 	if len(history) == 0 {
 		return nil, fmt.Errorf("empty message history")
 	}
-	if contextType == "" {
-		contextType = "promise"
-	}
 
-	prompt, exists := s.promptTemplates[contextType]
-	if !exists {
-		return nil, fmt.Errorf("unknown context type: %s", contextType)
-	}
-
+	prompt := ""
 	if len(history) > 1 {
-		prompt += `
-
-Тебе передаётся фрагмент переписки: сначала более старые сообщения, в конце — то, что нужно оценить.
-Учитывай контекст предыдущих реплик; итоговая оценка (detected, scenario_id, reminder) относится только к последнему сообщению.`
+		prompt += `Ты ищешь новые ключевые фразы в messages (из входящего JSON: scenarios [{id, trigger_phrase}], messages [строки], history [id]).
+		Найди trigger_phrase из scenarios, которые есть в messages.
+		Верни массив id таких фраз. Если новых нет — верни пустой массив.`
 	}
 
-	prompt += `
-
-Текущий момент для интерпретации «завтра», «в пятницу» и т.п. (RFC3339): ` + time.Now().Format(time.RFC3339)
-
-	if len(scenarios) > 0 {
+	scenariosToFind := getScenariosToSearch(scenarios, existingReminders)
+	if len(scenariosToFind) > 0 {
 		raw, err := json.Marshal(scenarios)
 		if err != nil {
 			return nil, fmt.Errorf("marshal scenarios: %w", err)
 		}
-		prompt += `
-
-Сценарии пользователя (JSON; id — UUID сценария, title — название, trigger_phrase — ключевая фраза/триггер):
-` + string(raw) + `
-
-Если последнее сообщение по смыслу однозначно подходит под один из сценариев (учитывай trigger_phrase и title): detected=true, scenario_id = поле id этого сценария (строка), заполни reminder осмысленными значениями.
-Если ни один сценарий не подходит или выбор неоднозначен: detected=false, scenario_id="" и все поля reminder — пустые строки "" (схема ответа требует эти ключи всегда).`
+		prompt += `Ключевые фразы: ` + string(raw) +
+			`. Для каждой ключевой фразы которая подошла: detected=true, scenario_id = поле id ключевой фразы (строка). Eсли ни один сценарий не подходит или выбор неоднозначен: detected=false, scenario_id="".`
 	} else {
-		prompt += `
-
-Список сценариев в этом запросе пуст: всегда scenario_id="".`
+		prompt += `Если список сценариев в этом запросе пуст: всегда scenario_id="".`
 	}
 
-	if len(existingReminders) > 0 {
-		raw, err := json.Marshal(existingReminders)
-		if err != nil {
-			return nil, fmt.Errorf("marshal existing reminders: %w", err)
-		}
-		prompt += `
+	now := time.Now()
+	endOfDay := time.Date(
+		now.Year(), now.Month(), now.Day(),
+		23, 59, 59, 0,
+		now.Location(),
+	)
 
-Напоминания, уже поставленные по этому чату за последние 30 минут (JSON; title — название, datetime — время события):
-` + string(raw) + `
-
-Если последнее сообщение относится к той же договорённости, что уже есть в списке выше (совпадает смысл и/или время) — это дубликат: detected=false.`
-	}
-
-	prompt += `
-
-Если detected=true, заполни объект reminder: title — короткое название встречи или задачи; description — краткое описание (1–2 предложения); datetime — начало в ISO 8601 с часовым поясом; end_datetime — окончание в том же формате (если в тексте нет — задай разумную длительность, например +1 час от начала).
-Если detected=false — scenario_id="" и reminder: title="", description="", datetime="", end_datetime="".`
+	prompt += `Если detected=true, заполни объект reminder:
+		title — название встречи или задачи;
+		description — краткое описание (1–2 предложения);
+		datetime — начало события в ISO 8601 с часовым поясом;
+		end_datetime — конец события в ISO 8601 с часовым поясом.
+		Считай: что утро с 06:00:00Z до 12:00:00Z, день/обед с 12:00:00Z до 17:00:00Z, вечер с 17:00:00Z до 22:00:00Z, ночь с 22:00:00Z до 06:00:00Z.
+		Если по переписке нельзя определить datetime, то возвращай ` + now.Format(time.RFC3339) +
+		`. Если по переписке нельзя определить end_datetime, то возвращай ` + endOfDay.Format(time.RFC3339) +
+		`. Если detected=false, то scenario_id="" и reminder: title="", description="", datetime="", end_datetime="".`
 
 	systemMessage := Message{
 		Role: "system",
@@ -182,77 +133,12 @@ func formatHistoryForModel(messages []string) string {
 		return messages[0]
 	}
 	var b strings.Builder
-	b.WriteString("Фрагмент чата (хронологически, сверху — раньше, снизу — новее):\n\n")
+	b.WriteString("Фрагмент чата от старого к новому:\n\n")
 	for i := 0; i < len(messages)-1; i++ {
-		fmt.Fprintf(&b, "[ранее] %s\n", messages[i])
+		fmt.Fprintf(&b, "%s\n", messages[i])
 	}
-	fmt.Fprintf(&b, "\n[последнее сообщение — только его оцени] %s", messages[len(messages)-1])
+	fmt.Fprintf(&b, "\n%s", messages[len(messages)-1])
 	return b.String()
-}
-
-func (s *AIService) CheckMessageWithCustomContext(
-	ctx context.Context,
-	message string,
-	contextCheck *ContextCheck,
-) (*CheckResult, error) {
-	customPrompt := fmt.Sprintf(`Ты анализируешь сообщения на наличие контекста: %s.
-Параметры анализа: %v.
-
-Поле scenario_id всегда присутствует в JSON: используй пустую строку "".`,
-		contextCheck.Description,
-		contextCheck.Parameters)
-
-	systemMessage := Message{
-		Role: "system",
-		Text: customPrompt,
-	}
-
-	userMessage := Message{
-		Role: "user",
-		Text: message,
-	}
-
-	return s.makeAPIRequest(ctx, systemMessage, userMessage, classificationResultSchema())
-}
-
-func (s *AIService) BatchCheckMessages(
-	ctx context.Context,
-	messages []string,
-	contextType string,
-) ([]*CheckResult, error) {
-	var wg sync.WaitGroup
-	results := make([]*CheckResult, len(messages))
-	errors := make([]error, len(messages))
-
-	semaphore := make(chan struct{}, 5)
-
-	for i, msg := range messages {
-		wg.Add(1)
-		go func(idx int, message string) {
-			defer wg.Done()
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-
-			result, err := s.CheckMessage(ctx, message, contextType)
-			if err != nil {
-				errors[idx] = err
-				log.Println("Error checking message",
-					"index", idx, "error", err, "message_preview", s.truncateMessage(message))
-			} else {
-				results[idx] = result
-			}
-		}(i, msg)
-	}
-
-	wg.Wait()
-
-	for _, err := range errors {
-		if err != nil {
-			return nil, fmt.Errorf("batch check completed with errors")
-		}
-	}
-
-	return results, nil
 }
 
 type JsonSchema struct {
@@ -289,7 +175,7 @@ func classificationResultSchema() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"detected": map[string]interface{}{
 				"type":        "boolean",
-				"description": "Есть ли в целевом сообщении искомый признак (обещание / срок / намерение — по задаче system).",
+				"description": "Есть ли в фрагменте переписки один из сценариев пользователя.",
 			},
 			"confidence": map[string]interface{}{
 				"type":        "number",
@@ -441,11 +327,4 @@ func (s *AIService) parseModelResponse(responseText string) (*CheckResult, error
 	}
 
 	return &result, nil
-}
-
-func (s *AIService) truncateMessage(msg string) string {
-	if len(msg) > 100 {
-		return msg[:100] + "..."
-	}
-	return msg
 }
