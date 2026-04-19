@@ -23,6 +23,12 @@ type UserScenarioForAI struct {
 	TriggerPhrase string `json:"trigger_phrase"`
 }
 
+type ExistingReminderForAI struct {
+	ScenarioId string `json:"scenario_id"`
+	Title      string `json:"title"`
+	DateTime   string `json:"datetime"`
+}
+
 type ReminderFromAI struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
@@ -31,11 +37,9 @@ type ReminderFromAI struct {
 }
 
 type CheckResult struct {
-	Detected    bool              `json:"detected"`
-	Confidence  float64           `json:"confidence"`
-	Reason      string            `json:"reason"`
-	ScenarioID  string            `json:"scenario_id,omitempty"`
-	Reminder    *ReminderFromAI   `json:"reminder,omitempty"`
-	ContextType string            `json:"contextType"`
-	Metadata    map[string]string `json:"metadata"`
+	Detected   bool              `json:"detected"`
+	Confidence float64           `json:"confidence"`
+	ScenarioID string            `json:"scenario_id,omitempty"`
+	Reminder   *ReminderFromAI   `json:"reminder,omitempty"`
+	Metadata   map[string]string `json:"metadata"`
 }

@@ -61,6 +61,61 @@ func (q *Queries) CreateReminder(ctx context.Context, arg CreateReminderParams) 
 	return i, err
 }
 
+const listRecentRemindersForChat = `-- name: ListRecentRemindersForChat :many
+SELECT
+    r.id,
+    r.scenario_id,
+    r.chat_id,
+    r.title,
+    r.description,
+    r.starts_at,
+    r.ends_at,
+    r.notify_before_minutes,
+    r.created_at
+FROM reminders r
+INNER JOIN scenarios s ON s.id = r.scenario_id
+WHERE s.user_id = $1
+  AND r.chat_id = $2
+  AND r.created_at >= $3
+ORDER BY r.created_at DESC
+`
+
+type ListRecentRemindersForChatParams struct {
+	UserID    pgtype.UUID
+	ChatID    pgtype.Int8
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) ListRecentRemindersForChat(ctx context.Context, arg ListRecentRemindersForChatParams) ([]Reminder, error) {
+	rows, err := q.db.Query(ctx, listRecentRemindersForChat, arg.UserID, arg.ChatID, arg.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Reminder
+	for rows.Next() {
+		var i Reminder
+		if err := rows.Scan(
+			&i.ID,
+			&i.ScenarioID,
+			&i.ChatID,
+			&i.Title,
+			&i.Description,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.NotifyBeforeMinutes,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRemindersForUserInRange = `-- name: ListRemindersForUserInRange :many
 SELECT
     r.id,

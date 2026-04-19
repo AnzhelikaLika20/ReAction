@@ -110,7 +110,7 @@ func main() {
 		log.Fatal("Failed to create AI service", "error", err)
 	}
 
-	chatUpdatesConsumer, err := chat_updates.NewChatUpdatesConsumer(cfg.Kafka, userActionsProducer, aiService, scenarioRepo)
+	chatUpdatesConsumer, err := chat_updates.NewChatUpdatesConsumer(cfg.Kafka, userActionsProducer, aiService, scenarioRepo, reminderRepo)
 	if err != nil {
 		log.Panic("[KAFKA] Failed to create Kafka consumer: %v", err)
 	}

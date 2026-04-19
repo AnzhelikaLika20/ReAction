@@ -22,38 +22,31 @@ const aiContextMessageCount = 6
 const maxStoredMessagesPerChat = 128
 
 type ChatUpdatesConsumer struct {
-	reader             *kafka.Reader
-	config             config.KafkaConfig
-	topic              string
-	isRunning          bool
-	cancel             context.CancelFunc
-	mu                 sync.RWMutex
-	userActionProducer *user_actions.UserActionProducer
-	aiService          *ai.AIService
-	scenarioRepo       *storage.ScenarioRepository
-	historyMu          sync.Mutex
-	recentByChat       map[string][]string // user_id+chat_id -> тексты по порядку
+	reader                 *kafka.Reader
+	config                 config.KafkaConfig
+	topic                  string
+	isRunning              bool
+	cancel                 context.CancelFunc
+	mu                     sync.RWMutex
+	userActionProducer     *user_actions.UserActionProducer
+	aiService              *ai.AIService
+	scenarioRepo           *storage.ScenarioRepository
+	reminderRepo           *storage.ReminderRepository
+	historyMu              sync.Mutex
+	recentByChat           map[string][]string    // user_id+chat_id -> тексты по порядку
+	recentTimestampsByChat map[string][]time.Time // user_id+chat_id -> timestamps по порядку
 }
 
 type ConversationMessage struct {
-	UserID             string    `json:"user_id,omitempty"`
-	SessionID          string    `json:"session_id"`
-	MessengerAccountID string    `json:"messenger_account_id,omitempty"`
-	EventType          string    `json:"event_type"`
-	MessageID          int64     `json:"message_id"`
-	ChatID             int64     `json:"chat_id"`
-	ChatTitle          string    `json:"chat_title,omitempty"`
-	ChatType           string    `json:"chat_type,omitempty"`
-	Text               string    `json:"text"`
-	SenderID           int64     `json:"sender_id"`
-	SenderFirstName    string    `json:"sender_first_name,omitempty"`
-	SenderLastName     string    `json:"sender_last_name,omitempty"`
-	SenderUsername     string    `json:"sender_username,omitempty"`
-	IsOutgoing         bool      `json:"is_outgoing"`
-	Timestamp          int64     `json:"timestamp"`
-	ReceivedAt         time.Time `json:"received_at"`
-	Offset             int64     `json:"-"`
-	Partition          int       `json:"-"`
+	UserID     string `json:"user_id,omitempty"`
+	SessionID  string `json:"session_id"`
+	EventType  string `json:"event_type"`
+	ChatID     int64  `json:"chat_id"`
+	ChatTitle  string `json:"chat_title,omitempty"`
+	Text       string `json:"text"`
+	SenderID   int64  `json:"sender_id"`
+	IsOutgoing bool   `json:"is_outgoing"`
+	Timestamp  int64  `json:"timestamp"`
 }
 
 func NewChatUpdatesConsumer(
@@ -61,6 +54,7 @@ func NewChatUpdatesConsumer(
 	userActionsProducer *user_actions.UserActionProducer,
 	aiService *ai.AIService,
 	scenarioRepo *storage.ScenarioRepository,
+	reminderRepo *storage.ReminderRepository,
 ) (*ChatUpdatesConsumer, error) {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:        []string{cfg.Broker},
@@ -74,28 +68,39 @@ func NewChatUpdatesConsumer(
 	})
 
 	c := &ChatUpdatesConsumer{
-		reader:             reader,
-		config:             cfg,
-		topic:              cfg.ChatUpdatesTopic,
-		userActionProducer: userActionsProducer,
-		aiService:          aiService,
-		scenarioRepo:       scenarioRepo,
-		recentByChat:       make(map[string][]string),
+		reader:                 reader,
+		config:                 cfg,
+		topic:                  cfg.ChatUpdatesTopic,
+		userActionProducer:     userActionsProducer,
+		aiService:              aiService,
+		scenarioRepo:           scenarioRepo,
+		reminderRepo:           reminderRepo,
+		recentByChat:           make(map[string][]string),
+		recentTimestampsByChat: make(map[string][]time.Time),
 	}
 
 	return c, nil
 }
 
-func (c *ChatUpdatesConsumer) appendMessageAndWindow(userID string, chatID int64, text string) []string {
+func (c *ChatUpdatesConsumer) appendMessageAndWindow(userID string, chatID int64, text string, isOutgoing bool, ts time.Time) ([]string, time.Time) {
 	c.historyMu.Lock()
 	defer c.historyMu.Unlock()
 
 	key := partitionkey.UserChat(userID, chatID)
-	buf := append(c.recentByChat[key], text)
+
+	source := "[me]"
+	if isOutgoing {
+		source = "[somebody]"
+	}
+	text_wuth_source := fmt.Sprintf("%s %s", source, text)
+	buf := append(c.recentByChat[key], text_wuth_source)
+	tsBuf := append(c.recentTimestampsByChat[key], ts)
 	if len(buf) > maxStoredMessagesPerChat {
 		buf = buf[len(buf)-maxStoredMessagesPerChat:]
+		tsBuf = tsBuf[len(tsBuf)-maxStoredMessagesPerChat:]
 	}
 	c.recentByChat[key] = buf
+	c.recentTimestampsByChat[key] = tsBuf
 
 	n := len(buf)
 	take := aiContextMessageCount
@@ -104,7 +109,8 @@ func (c *ChatUpdatesConsumer) appendMessageAndWindow(userID string, chatID int64
 	}
 	out := make([]string, take)
 	copy(out, buf[n-take:])
-	return out
+	windowStart := tsBuf[n-take]
+	return out, windowStart
 }
 
 func (c *ChatUpdatesConsumer) Start(ctx context.Context) error {
@@ -162,9 +168,6 @@ func (c *ChatUpdatesConsumer) processKafkaMessage(msg kafka.Message) {
 		return
 	}
 
-	conversationMsg.Offset = msg.Offset
-	conversationMsg.Partition = msg.Partition
-
 	c.logMessage(&conversationMsg)
 
 	c.ScheduleActionIfNeeded(conversationMsg)
@@ -205,21 +208,39 @@ func (c *ChatUpdatesConsumer) ScheduleActionIfNeeded(msg ConversationMessage) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
-	window := c.appendMessageAndWindow(msg.UserID, msg.ChatID, msg.Text)
-	result, aiErr := c.aiService.CheckMessageWithHistoryAndScenarios(ctx, window, "promise", aiScenarios)
+
+	msgTime := time.Unix(msg.Timestamp, 0)
+	window, windowStart := c.appendMessageAndWindow(msg.UserID, msg.ChatID, msg.Text, msg.IsOutgoing, msgTime)
+
+	var existingReminders []ai.ExistingReminderForAI
+	if c.reminderRepo != nil {
+		rows, err := c.reminderRepo.ListRecentForChat(ctx, msg.UserID, msg.ChatID, windowStart)
+		if err != nil {
+			log.Printf("[CHAT-UPDATES] load recent reminders: %v", err)
+		} else {
+			for _, row := range rows {
+				existingReminders = append(existingReminders, ai.ExistingReminderForAI{
+					ScenarioId: row.ScenarioID.String(),
+					Title:      row.Title,
+					DateTime:   row.StartsAt.Time.Format(time.RFC3339),
+				})
+			}
+		}
+	}
+
+	result, aiErr := c.aiService.CheckMessageWithHistoryAndScenarios(ctx, window, msg.ChatTitle, aiScenarios, existingReminders)
 	if aiErr != nil {
 		log.Println("Failed to check message with AI",
 			"chat_id", msg.ChatID, "error", aiErr)
 		return
 	}
-	if result == nil || !result.Detected || result.Confidence <= 0.7 {
+	if result == nil || !result.Detected || result.Confidence <= 0.6 {
 		return
 	}
 
 	log.Println("Scenario matched (promise)",
 		"chat_id", msg.ChatID,
-		"confidence", result.Confidence,
-		"reason", result.Reason)
+		"confidence", result.Confidence)
 
 	if result.Reminder == nil || strings.TrimSpace(result.Reminder.Title) == "" ||
 		strings.TrimSpace(result.Reminder.DateTime) == "" {
@@ -253,18 +274,13 @@ func (c *ChatUpdatesConsumer) ScheduleActionIfNeeded(msg ConversationMessage) {
 		return
 	}
 
-	desc := result.Reminder.Description
-	if strings.TrimSpace(desc) == "" {
-		desc = result.Reason
-	}
-
 	if err := c.userActionProducer.SendReminder(
 		msg.SessionID,
 		msg.UserID,
 		scenarioID,
 		msg.ChatID,
-		strings.TrimSpace(result.Reminder.Title),
-		strings.TrimSpace(desc),
+		fmt.Sprintf("[%s] %s", msg.ChatTitle, strings.TrimSpace(result.Reminder.Title)),
+		"", // TODO: fill reminder description
 		at,
 		endAt,
 	); err != nil {
@@ -316,16 +332,6 @@ func truncateText(text string, maxLength int) string {
 }
 
 func formatSenderInfo(msg *ConversationMessage) string {
-	if msg.SenderFirstName != "" || msg.SenderLastName != "" {
-		name := fmt.Sprintf("%s %s", msg.SenderFirstName, msg.SenderLastName)
-		if msg.SenderUsername != "" {
-			return fmt.Sprintf("%s (@%s)", strings.TrimSpace(name), msg.SenderUsername)
-		}
-		return strings.TrimSpace(name)
-	}
-	if msg.SenderUsername != "" {
-		return "@" + msg.SenderUsername
-	}
 	return fmt.Sprintf("User %d", msg.SenderID)
 }
 

@@ -128,18 +128,15 @@ func (l *Listener) sendToKafka(message *Message, eventType string) {
 	}
 
 	messageEvent := chat_updates.ChatUpdateMessageEvent{
-		UserID:             l.appUserID,
-		SessionID:          l.messengerAccountID,
-		MessengerAccountID: l.messengerAccountID,
-		EventType:          eventType,
-		MessageID:          message.ID,
-		ChatID:             message.ChatID,
-		ChatTitle:          message.ChatTitle,
-		ChatType:           message.ChatType,
-		Text:               message.Text,
-		SenderID:           message.SenderID,
-		IsOutgoing:         message.IsOutgoing,
-		Timestamp:          message.Timestamp,
+		UserID:     l.appUserID,
+		SessionID:  l.messengerAccountID,
+		EventType:  eventType,
+		ChatID:     message.ChatID,
+		ChatTitle:  message.ChatTitle,
+		Text:       message.Text,
+		SenderID:   message.SenderID,
+		IsOutgoing: message.IsOutgoing,
+		Timestamp:  message.Timestamp,
 	}
 
 	err := l.kafkaProducer.SendTelegramMessage(messageEvent)
