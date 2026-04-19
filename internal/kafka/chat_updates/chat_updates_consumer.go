@@ -82,13 +82,18 @@ func NewChatUpdatesConsumer(
 	return c, nil
 }
 
-func (c *ChatUpdatesConsumer) appendMessageAndWindow(userID string, chatID int64, text string, ts time.Time) ([]string, time.Time) {
+func (c *ChatUpdatesConsumer) appendMessageAndWindow(userID string, chatID int64, text string, isOutgoing bool, ts time.Time) ([]string, time.Time) {
 	c.historyMu.Lock()
 	defer c.historyMu.Unlock()
 
 	key := partitionkey.UserChat(userID, chatID)
 
-	buf := append(c.recentByChat[key], text)
+	source := "[me]"
+	if isOutgoing {
+		source = "[somebody]"
+	}
+	text_wuth_source := fmt.Sprintf("%s %s", source, text)
+	buf := append(c.recentByChat[key], text_wuth_source)
 	tsBuf := append(c.recentTimestampsByChat[key], ts)
 	if len(buf) > maxStoredMessagesPerChat {
 		buf = buf[len(buf)-maxStoredMessagesPerChat:]
@@ -205,7 +210,7 @@ func (c *ChatUpdatesConsumer) ScheduleActionIfNeeded(msg ConversationMessage) {
 	defer cancel()
 
 	msgTime := time.Unix(msg.Timestamp, 0)
-	window, windowStart := c.appendMessageAndWindow(msg.UserID, msg.ChatID, msg.Text, msgTime)
+	window, windowStart := c.appendMessageAndWindow(msg.UserID, msg.ChatID, msg.Text, msg.IsOutgoing, msgTime)
 
 	var existingReminders []ai.ExistingReminderForAI
 	if c.reminderRepo != nil {
@@ -223,20 +228,19 @@ func (c *ChatUpdatesConsumer) ScheduleActionIfNeeded(msg ConversationMessage) {
 		}
 	}
 
-	result, aiErr := c.aiService.CheckMessageWithHistoryAndScenarios(ctx, window, aiScenarios, existingReminders)
+	result, aiErr := c.aiService.CheckMessageWithHistoryAndScenarios(ctx, window, msg.ChatTitle, aiScenarios, existingReminders)
 	if aiErr != nil {
 		log.Println("Failed to check message with AI",
 			"chat_id", msg.ChatID, "error", aiErr)
 		return
 	}
-	if result == nil || !result.Detected || result.Confidence <= 0.7 {
+	if result == nil || !result.Detected || result.Confidence <= 0.6 {
 		return
 	}
 
 	log.Println("Scenario matched (promise)",
 		"chat_id", msg.ChatID,
-		"confidence", result.Confidence,
-		"reason", result.Reason)
+		"confidence", result.Confidence)
 
 	if result.Reminder == nil || strings.TrimSpace(result.Reminder.Title) == "" ||
 		strings.TrimSpace(result.Reminder.DateTime) == "" {
@@ -270,18 +274,13 @@ func (c *ChatUpdatesConsumer) ScheduleActionIfNeeded(msg ConversationMessage) {
 		return
 	}
 
-	desc := result.Reminder.Description
-	if strings.TrimSpace(desc) == "" {
-		desc = result.Reason
-	}
-
 	if err := c.userActionProducer.SendReminder(
 		msg.SessionID,
 		msg.UserID,
 		scenarioID,
 		msg.ChatID,
-		strings.TrimSpace(result.Reminder.Title),
-		strings.TrimSpace(desc),
+		fmt.Sprintf("[%s] %s", msg.ChatTitle, strings.TrimSpace(result.Reminder.Title)),
+		"", // TODO: fill reminder description
 		at,
 		endAt,
 	); err != nil {

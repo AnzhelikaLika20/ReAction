@@ -72,6 +72,7 @@ func getScenariosToSearch(scenarios []UserScenarioForAI, existingReminders []Exi
 func (s *AIService) CheckMessageWithHistoryAndScenarios(
 	ctx context.Context,
 	history []string,
+	chatTitle string,
 	scenarios []UserScenarioForAI,
 	existingReminders []ExistingReminderForAI,
 ) (*CheckResult, error) {
@@ -181,10 +182,6 @@ func classificationResultSchema() map[string]interface{} {
 				"type":        "number",
 				"description": "Уверенность от 0 до 1.",
 			},
-			"reason": map[string]interface{}{
-				"type":        "string",
-				"description": "Краткое обоснование на русском.",
-			},
 			"scenario_id": map[string]interface{}{
 				"type":        "string",
 				"description": "UUID сценария из списка при detected=true; иначе пустая строка.",
@@ -213,7 +210,7 @@ func classificationResultSchema() map[string]interface{} {
 				"required": []string{"title", "description", "datetime", "end_datetime"},
 			},
 		},
-		"required": []string{"detected", "confidence", "reason", "scenario_id", "reminder"},
+		"required": []string{"detected", "confidence", "scenario_id", "reminder"},
 	}
 }
 
@@ -274,7 +271,6 @@ func (s *AIService) makeAPIRequest(
 			continue
 		}
 
-		log.Printf("RESPONSE STATUS: %d\n", resp.StatusCode)
 		log.Printf("FULL RESPONSE BODY:\n%s\n", string(body))
 
 		if resp.StatusCode != http.StatusOK {
@@ -319,10 +315,8 @@ func (s *AIService) parseModelResponse(responseText string) (*CheckResult, error
 			"response", cleanText, "error", err)
 
 		return &CheckResult{
-			Detected:    false,
-			Confidence:  0.0,
-			Reason:      "Failed to parse AI response",
-			ContextType: "unknown",
+			Detected:   false,
+			Confidence: 0.0,
 		}, nil
 	}
 
