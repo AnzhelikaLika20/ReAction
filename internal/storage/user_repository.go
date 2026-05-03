@@ -142,3 +142,26 @@ func (r *UserRepository) VerifyEmailByTokenHash(ctx context.Context, tokenHash s
 	}
 	return rowToUser(row.ID, row.Email, row.IsActive, row.CreatedAt, row.UpdatedAt, row.EmailVerifiedAt), nil
 }
+
+func (r *UserRepository) SetPasswordResetToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error {
+	uid, err := ParseUUID(userID)
+	if err != nil {
+		return err
+	}
+	return r.queries.SetUserPasswordResetToken(ctx, db.SetUserPasswordResetTokenParams{
+		ID:                     uid,
+		PasswordResetTokenHash: pgtype.Text{String: tokenHash, Valid: true},
+		PasswordResetExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	})
+}
+
+func (r *UserRepository) ResetPasswordByResetTokenHash(ctx context.Context, tokenHash, newPasswordHash string) (*User, error) {
+	row, err := r.queries.ResetPasswordByResetTokenHash(ctx, db.ResetPasswordByResetTokenHashParams{
+		PasswordResetTokenHash: pgtype.Text{String: tokenHash, Valid: true},
+		PasswordHash:           pgtype.Text{String: newPasswordHash, Valid: true},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return rowToUser(row.ID, row.Email, row.IsActive, row.CreatedAt, row.UpdatedAt, row.EmailVerifiedAt), nil
+}

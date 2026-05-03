@@ -4,6 +4,49 @@
         "contact": {}
     },
     "paths": {
+        "/auth/forgot-password": {
+            "post": {
+                "description": "Если аккаунт с подтверждённым email существует, отправляется письмо со ссылкой. Ответ всегда успешный (защита от перечисления адресов).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Запросить восстановление пароля",
+                "parameters": [
+                    {
+                        "description": "Email",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ForgotPasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/login": {
             "post": {
                 "description": "Аутентификация по email и паролю, выдача JWT (Bearer).",
@@ -193,6 +236,52 @@
                 "responses": {
                     "204": {
                         "description": "Письмо отправлено или не требуется"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/reset-password": {
+            "post": {
+                "description": "Проверяет одноразовый токен, задаёт новый пароль, отзывает старые refresh-сессии и возвращает JWT.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Установить новый пароль по токену из письма",
+                "parameters": [
+                    {
+                        "description": "Токен и новый пароль",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ResetPasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.TokenResponse"
+                        }
                     },
                     "400": {
                         "description": "Bad Request",
@@ -1332,6 +1421,19 @@
                 }
             }
         },
+        "handlers.ForgotPasswordRequest": {
+            "description": "Запрос письма со ссылкой сброса пароля",
+            "type": "object",
+            "required": [
+                "email"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                }
+            }
+        },
         "handlers.LoginRequest": {
             "description": "Вход по email и паролю",
             "type": "object",
@@ -1441,6 +1543,24 @@
                 "email": {
                     "type": "string",
                     "example": "user@example.com"
+                }
+            }
+        },
+        "handlers.ResetPasswordRequest": {
+            "description": "Новый пароль по одноразовому токену из письма",
+            "type": "object",
+            "required": [
+                "password",
+                "token"
+            ],
+            "properties": {
+                "password": {
+                    "type": "string",
+                    "minLength": 8,
+                    "example": "secret12345"
+                },
+                "token": {
+                    "type": "string"
                 }
             }
         },
