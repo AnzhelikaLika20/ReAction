@@ -102,6 +102,8 @@ func isPublicRoute(path string) bool {
 		"/auth/register",
 		"/auth/login",
 		"/auth/refresh",
+		"/auth/forgot-password",
+		"/auth/reset-password",
 		"/ping",
 		"/webcal/",
 		"/swagger/",

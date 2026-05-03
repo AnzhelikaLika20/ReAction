@@ -16,7 +16,7 @@ INSERT INTO users (
     email,
     password_hash
 ) VALUES (lower($1), $2)
-RETURNING id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at
+RETURNING id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at, password_reset_token_hash, password_reset_expires_at
 `
 
 type CreateUserWithCredentialsParams struct {
@@ -34,6 +34,8 @@ type CreateUserWithCredentialsRow struct {
 	EmailVerifiedAt            pgtype.Timestamptz
 	EmailVerificationTokenHash pgtype.Text
 	EmailVerificationExpiresAt pgtype.Timestamptz
+	PasswordResetTokenHash     pgtype.Text
+	PasswordResetExpiresAt     pgtype.Timestamptz
 }
 
 func (q *Queries) CreateUserWithCredentials(ctx context.Context, arg CreateUserWithCredentialsParams) (CreateUserWithCredentialsRow, error) {
@@ -49,6 +51,8 @@ func (q *Queries) CreateUserWithCredentials(ctx context.Context, arg CreateUserW
 		&i.EmailVerifiedAt,
 		&i.EmailVerificationTokenHash,
 		&i.EmailVerificationExpiresAt,
+		&i.PasswordResetTokenHash,
+		&i.PasswordResetExpiresAt,
 	)
 	return i, err
 }
@@ -64,7 +68,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at FROM users 
+SELECT id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at, password_reset_token_hash, password_reset_expires_at FROM users 
 WHERE lower(email) = lower($1)
 `
 
@@ -78,6 +82,8 @@ type GetUserByEmailRow struct {
 	EmailVerifiedAt            pgtype.Timestamptz
 	EmailVerificationTokenHash pgtype.Text
 	EmailVerificationExpiresAt pgtype.Timestamptz
+	PasswordResetTokenHash     pgtype.Text
+	PasswordResetExpiresAt     pgtype.Timestamptz
 }
 
 func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (GetUserByEmailRow, error) {
@@ -93,12 +99,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (GetUserByEm
 		&i.EmailVerifiedAt,
 		&i.EmailVerificationTokenHash,
 		&i.EmailVerificationExpiresAt,
+		&i.PasswordResetTokenHash,
+		&i.PasswordResetExpiresAt,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at FROM users 
+SELECT id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at, password_reset_token_hash, password_reset_expires_at FROM users 
 WHERE id = $1
 `
 
@@ -112,6 +120,8 @@ type GetUserByIDRow struct {
 	EmailVerifiedAt            pgtype.Timestamptz
 	EmailVerificationTokenHash pgtype.Text
 	EmailVerificationExpiresAt pgtype.Timestamptz
+	PasswordResetTokenHash     pgtype.Text
+	PasswordResetExpiresAt     pgtype.Timestamptz
 }
 
 func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDRow, error) {
@@ -127,6 +137,58 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDR
 		&i.EmailVerifiedAt,
 		&i.EmailVerificationTokenHash,
 		&i.EmailVerificationExpiresAt,
+		&i.PasswordResetTokenHash,
+		&i.PasswordResetExpiresAt,
+	)
+	return i, err
+}
+
+const resetPasswordByResetTokenHash = `-- name: ResetPasswordByResetTokenHash :one
+UPDATE users
+SET password_hash = $2,
+    password_reset_token_hash = NULL,
+    password_reset_expires_at = NULL,
+    updated_at = NOW()
+WHERE password_reset_token_hash = $1
+  AND password_reset_expires_at IS NOT NULL
+  AND password_reset_expires_at > NOW()
+RETURNING id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at, password_reset_token_hash, password_reset_expires_at
+`
+
+type ResetPasswordByResetTokenHashParams struct {
+	PasswordResetTokenHash pgtype.Text
+	PasswordHash           pgtype.Text
+}
+
+type ResetPasswordByResetTokenHashRow struct {
+	ID                         pgtype.UUID
+	Email                      string
+	PasswordHash               pgtype.Text
+	IsActive                   pgtype.Bool
+	CreatedAt                  pgtype.Timestamptz
+	UpdatedAt                  pgtype.Timestamptz
+	EmailVerifiedAt            pgtype.Timestamptz
+	EmailVerificationTokenHash pgtype.Text
+	EmailVerificationExpiresAt pgtype.Timestamptz
+	PasswordResetTokenHash     pgtype.Text
+	PasswordResetExpiresAt     pgtype.Timestamptz
+}
+
+func (q *Queries) ResetPasswordByResetTokenHash(ctx context.Context, arg ResetPasswordByResetTokenHashParams) (ResetPasswordByResetTokenHashRow, error) {
+	row := q.db.QueryRow(ctx, resetPasswordByResetTokenHash, arg.PasswordResetTokenHash, arg.PasswordHash)
+	var i ResetPasswordByResetTokenHashRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.EmailVerifiedAt,
+		&i.EmailVerificationTokenHash,
+		&i.EmailVerificationExpiresAt,
+		&i.PasswordResetTokenHash,
+		&i.PasswordResetExpiresAt,
 	)
 	return i, err
 }
@@ -150,6 +212,25 @@ func (q *Queries) SetUserEmailVerificationToken(ctx context.Context, arg SetUser
 	return err
 }
 
+const setUserPasswordResetToken = `-- name: SetUserPasswordResetToken :exec
+UPDATE users
+SET password_reset_token_hash = $2,
+    password_reset_expires_at = $3,
+    updated_at = NOW()
+WHERE id = $1
+`
+
+type SetUserPasswordResetTokenParams struct {
+	ID                     pgtype.UUID
+	PasswordResetTokenHash pgtype.Text
+	PasswordResetExpiresAt pgtype.Timestamptz
+}
+
+func (q *Queries) SetUserPasswordResetToken(ctx context.Context, arg SetUserPasswordResetTokenParams) error {
+	_, err := q.db.Exec(ctx, setUserPasswordResetToken, arg.ID, arg.PasswordResetTokenHash, arg.PasswordResetExpiresAt)
+	return err
+}
+
 const updateUserLastAuth = `-- name: UpdateUserLastAuth :exec
 UPDATE users 
 SET updated_at = NOW()
@@ -170,7 +251,7 @@ SET email_verified_at = NOW(),
 WHERE email_verification_token_hash = $1
   AND email_verification_expires_at IS NOT NULL
   AND email_verification_expires_at > NOW()
-RETURNING id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at
+RETURNING id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at, password_reset_token_hash, password_reset_expires_at
 `
 
 type VerifyUserEmailByTokenHashRow struct {
@@ -183,6 +264,8 @@ type VerifyUserEmailByTokenHashRow struct {
 	EmailVerifiedAt            pgtype.Timestamptz
 	EmailVerificationTokenHash pgtype.Text
 	EmailVerificationExpiresAt pgtype.Timestamptz
+	PasswordResetTokenHash     pgtype.Text
+	PasswordResetExpiresAt     pgtype.Timestamptz
 }
 
 func (q *Queries) VerifyUserEmailByTokenHash(ctx context.Context, emailVerificationTokenHash pgtype.Text) (VerifyUserEmailByTokenHashRow, error) {
@@ -198,6 +281,8 @@ func (q *Queries) VerifyUserEmailByTokenHash(ctx context.Context, emailVerificat
 		&i.EmailVerifiedAt,
 		&i.EmailVerificationTokenHash,
 		&i.EmailVerificationExpiresAt,
+		&i.PasswordResetTokenHash,
+		&i.PasswordResetExpiresAt,
 	)
 	return i, err
 }

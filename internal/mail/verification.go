@@ -58,3 +58,35 @@ func (c *Client) SendRegistrationVerification(toEmail, verificationURL string) e
 	auth := smtp.PlainAuth("", strings.TrimSpace(c.cfg.User), c.cfg.Password, host)
 	return smtp.SendMail(addr, auth, from, []string{toEmail}, msg)
 }
+
+func (c *Client) SendPasswordReset(toEmail, resetURL string) error {
+	if !c.Configured() {
+		return nil
+	}
+	port := c.cfg.Port
+	if port == "" {
+		port = "587"
+	}
+	from := strings.TrimSpace(c.cfg.From)
+	if from == "" {
+		return fmt.Errorf("mail: empty From address")
+	}
+	host := strings.TrimSpace(c.cfg.Host)
+	addr := fmt.Sprintf("%s:%s", host, port)
+
+	subject := mime.BEncoding.Encode("UTF-8", "Re:Action — восстановление пароля")
+	body := fmt.Sprintf(`Здравствуйте.
+
+Чтобы задать новый пароль, перейдите по ссылке (действует ограниченное время):
+
+%s
+
+Если вы не запрашивали сброс пароля, проигнорируйте это письмо.
+`, resetURL)
+
+	msg := []byte(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n%s",
+		from, toEmail, subject, body))
+
+	auth := smtp.PlainAuth("", strings.TrimSpace(c.cfg.User), c.cfg.Password, host)
+	return smtp.SendMail(addr, auth, from, []string{toEmail}, msg)
+}

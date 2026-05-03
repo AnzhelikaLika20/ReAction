@@ -69,6 +69,15 @@ definitions:
         example: error message
         type: string
     type: object
+  handlers.ForgotPasswordRequest:
+    description: Запрос письма со ссылкой сброса пароля
+    properties:
+      email:
+        example: user@example.com
+        type: string
+    required:
+    - email
+    type: object
   handlers.LoginRequest:
     description: Вход по email и паролю
     properties:
@@ -149,6 +158,19 @@ definitions:
         type: string
     required:
     - email
+    type: object
+  handlers.ResetPasswordRequest:
+    description: Новый пароль по одноразовому токену из письма
+    properties:
+      password:
+        example: secret12345
+        minLength: 8
+        type: string
+      token:
+        type: string
+    required:
+    - password
+    - token
     type: object
   handlers.SessionResponse:
     description: SessionResponse состояние авторизации Telegram (tdlib) для указанного
@@ -268,6 +290,35 @@ definitions:
 info:
   contact: {}
 paths:
+  /auth/forgot-password:
+    post:
+      consumes:
+      - application/json
+      description: Если аккаунт с подтверждённым email существует, отправляется письмо
+        со ссылкой. Ответ всегда успешный (защита от перечисления адресов).
+      parameters:
+      - description: Email
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.ForgotPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Запросить восстановление пароля
+      tags:
+      - auth
   /auth/login:
     post:
       consumes:
@@ -405,6 +456,37 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Отправить письмо подтверждения ещё раз
+      tags:
+      - auth
+  /auth/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: Проверяет одноразовый токен, задаёт новый пароль, отзывает старые
+        refresh-сессии и возвращает JWT.
+      parameters:
+      - description: Токен и новый пароль
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.ResetPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.TokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Установить новый пароль по токену из письма
       tags:
       - auth
   /auth/session/status:

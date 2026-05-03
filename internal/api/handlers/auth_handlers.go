@@ -76,6 +76,17 @@ type ResendVerificationRequest struct {
 	Email string `json:"email" example:"user@example.com" binding:"required,email"`
 }
 
+// @Description Запрос письма со ссылкой сброса пароля
+type ForgotPasswordRequest struct {
+	Email string `json:"email" example:"user@example.com" binding:"required,email"`
+}
+
+// @Description Новый пароль по одноразовому токену из письма
+type ResetPasswordRequest struct {
+	Token    string `json:"token" binding:"required"`
+	Password string `json:"password" example:"secret12345" binding:"required,min=8"`
+}
+
 // @Description SessionResponse состояние авторизации Telegram (tdlib) для указанного messenger_account_id
 type SessionResponse struct {
 	AuthState string `json:"auth_state" example:"wait_code"`
@@ -448,6 +459,65 @@ func (h *AuthHandlers) ResendVerification(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// @Summary Запросить восстановление пароля
+// @Description Если аккаунт с подтверждённым email существует, отправляется письмо со ссылкой. Ответ всегда успешный (защита от перечисления адресов).
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body ForgotPasswordRequest true "Email"
+// @Success 204
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /auth/forgot-password [post]
+func (h *AuthHandlers) ForgotPassword(c *gin.Context) {
+	var req ForgotPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	if err := h.authService.RequestPasswordReset(c.Request.Context(), req.Email); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// @Summary Установить новый пароль по токену из письма
+// @Description Проверяет одноразовый токен, задаёт новый пароль, отзывает старые refresh-сессии и возвращает JWT.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body ResetPasswordRequest true "Токен и новый пароль"
+// @Success 200 {object} TokenResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /auth/reset-password [post]
+func (h *AuthHandlers) ResetPassword(c *gin.Context) {
+	var req ResetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	pair, err := h.authService.ResetPassword(c.Request.Context(), strings.TrimSpace(req.Token), req.Password)
+	if err != nil {
+		if errors.Is(err, auth.ErrInvalidPasswordResetToken) {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, TokenResponse{
+		Token:        pair.AccessToken,
+		RefreshToken: pair.RefreshToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    int(h.authService.GetTokenDuration().Seconds()),
+	})
+}
+
 // @Summary Обновить access-токен
 // @Description Принимает refresh-токен, инвалидирует его и возвращает новую пару токенов (rotation).
 // @Tags auth
@@ -490,6 +560,8 @@ func (h *AuthHandlers) RegisterAuthRoutes(router *gin.Engine) {
 	router.POST("/auth/refresh", h.RefreshToken)
 	router.GET("/auth/verify-email", h.VerifyEmail)
 	router.POST("/auth/resend-verification", h.ResendVerification)
+	router.POST("/auth/forgot-password", h.ForgotPassword)
+	router.POST("/auth/reset-password", h.ResetPassword)
 
 	tg := router.Group("/auth/telegram")
 	tg.POST("/init", h.InitTelegramClient)

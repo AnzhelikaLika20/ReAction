@@ -3,14 +3,14 @@ INSERT INTO users (
     email,
     password_hash
 ) VALUES (lower($1), $2)
-RETURNING id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at;
+RETURNING id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at, password_reset_token_hash, password_reset_expires_at;
 
 -- name: GetUserByEmail :one
-SELECT id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at FROM users 
+SELECT id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at, password_reset_token_hash, password_reset_expires_at FROM users 
 WHERE lower(email) = lower($1);
 
 -- name: GetUserByID :one
-SELECT id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at FROM users 
+SELECT id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at, password_reset_token_hash, password_reset_expires_at FROM users 
 WHERE id = $1;
 
 -- name: UpdateUserLastAuth :exec
@@ -38,4 +38,22 @@ SET email_verified_at = NOW(),
 WHERE email_verification_token_hash = $1
   AND email_verification_expires_at IS NOT NULL
   AND email_verification_expires_at > NOW()
-RETURNING id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at;
+RETURNING id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at, password_reset_token_hash, password_reset_expires_at;
+
+-- name: SetUserPasswordResetToken :exec
+UPDATE users
+SET password_reset_token_hash = $2,
+    password_reset_expires_at = $3,
+    updated_at = NOW()
+WHERE id = $1;
+
+-- name: ResetPasswordByResetTokenHash :one
+UPDATE users
+SET password_hash = $2,
+    password_reset_token_hash = NULL,
+    password_reset_expires_at = NULL,
+    updated_at = NOW()
+WHERE password_reset_token_hash = $1
+  AND password_reset_expires_at IS NOT NULL
+  AND password_reset_expires_at > NOW()
+RETURNING id, email, password_hash, is_active, created_at, updated_at, email_verified_at, email_verification_token_hash, email_verification_expires_at, password_reset_token_hash, password_reset_expires_at;

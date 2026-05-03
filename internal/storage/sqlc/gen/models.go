@@ -136,6 +136,8 @@ type User struct {
 	EmailVerifiedAt            pgtype.Timestamptz
 	EmailVerificationTokenHash pgtype.Text
 	EmailVerificationExpiresAt pgtype.Timestamptz
+	PasswordResetTokenHash     pgtype.Text
+	PasswordResetExpiresAt     pgtype.Timestamptz
 }
 
 type UserMessengerAccount struct {

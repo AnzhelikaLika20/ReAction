@@ -30,6 +30,7 @@ var ErrUserNotFound = errors.New("user not found")
 var ErrEmailTaken = errors.New("email already registered")
 var ErrEmailNotVerified = errors.New("email address is not verified")
 var ErrInvalidVerificationToken = errors.New("invalid or expired verification link")
+var ErrInvalidPasswordResetToken = errors.New("invalid or expired password reset link")
 var ErrInvalidRefreshToken = errors.New("invalid or expired refresh token")
 var ErrTelegramNotConnected = errors.New("telegram client not initialized; connect Telegram first")
 var ErrMessengerNotOwned = errors.New("messenger account not found")
@@ -51,17 +52,18 @@ type TokenPair struct {
 }
 
 type AuthService struct {
-	jwtService           *JWTService
-	userRepo             *storage.UserRepository
-	messengerRepo        *storage.MessengerAccountRepository
-	refreshTokenRepo     *storage.RefreshTokenRepository
-	authManager          *telegram.AuthStateManager
-	chatService          *chats.ChatService
-	tdlibSessionsRoot    string
-	mail                 *mail.Client
-	frontendPublicURL    string
-	verificationTokenTTL time.Duration
-	refreshTokenTTL      time.Duration
+	jwtService            *JWTService
+	userRepo              *storage.UserRepository
+	messengerRepo         *storage.MessengerAccountRepository
+	refreshTokenRepo      *storage.RefreshTokenRepository
+	authManager           *telegram.AuthStateManager
+	chatService           *chats.ChatService
+	tdlibSessionsRoot     string
+	mail                  *mail.Client
+	frontendPublicURL     string
+	verificationTokenTTL  time.Duration
+	passwordResetTokenTTL time.Duration
+	refreshTokenTTL       time.Duration
 }
 
 func NewAuthService(
@@ -76,17 +78,18 @@ func NewAuthService(
 	frontendPublicURL string,
 ) *AuthService {
 	return &AuthService{
-		jwtService:           jwtService,
-		userRepo:             userRepo,
-		messengerRepo:        messengerRepo,
-		refreshTokenRepo:     refreshTokenRepo,
-		authManager:          authManager,
-		chatService:          chatService,
-		tdlibSessionsRoot:    tdlibSessionsRoot,
-		mail:                 mailClient,
-		frontendPublicURL:    strings.TrimRight(strings.TrimSpace(frontendPublicURL), "/"),
-		verificationTokenTTL: 48 * time.Hour,
-		refreshTokenTTL:      30 * 24 * time.Hour,
+		jwtService:            jwtService,
+		userRepo:              userRepo,
+		messengerRepo:         messengerRepo,
+		refreshTokenRepo:      refreshTokenRepo,
+		authManager:           authManager,
+		chatService:           chatService,
+		tdlibSessionsRoot:     tdlibSessionsRoot,
+		mail:                  mailClient,
+		frontendPublicURL:     strings.TrimRight(strings.TrimSpace(frontendPublicURL), "/"),
+		verificationTokenTTL:  48 * time.Hour,
+		passwordResetTokenTTL: 1 * time.Hour,
+		refreshTokenTTL:       30 * 24 * time.Hour,
 	}
 }
 
@@ -250,6 +253,61 @@ func (s *AuthService) ResendVerificationEmail(ctx context.Context, email string)
 		}
 	}
 	return nil
+}
+
+func (s *AuthService) RequestPasswordReset(ctx context.Context, email string) error {
+	u, _, err := s.userRepo.GetUserByEmail(ctx, email)
+	if err != nil {
+		return err
+	}
+	if u == nil || !u.IsActive || u.EmailVerifiedAt == nil {
+		return nil
+	}
+
+	if s.mail.Configured() && s.frontendPublicURL == "" {
+		return fmt.Errorf("APP_FRONTEND_URL is required when SMTP is configured")
+	}
+
+	plainToken, tokenHash, err := randomEmailVerificationValues()
+	if err != nil {
+		return fmt.Errorf("password reset token: %w", err)
+	}
+	expires := time.Now().Add(s.passwordResetTokenTTL)
+	if err := s.userRepo.SetPasswordResetToken(ctx, u.ID, tokenHash, expires); err != nil {
+		return err
+	}
+
+	resetURL := fmt.Sprintf("%s/reset-password?token=%s", s.frontendPublicURL, url.QueryEscape(plainToken))
+	if !s.mail.Configured() {
+		log.Printf("[AUTH] SMTP disabled; password reset link for %s: %s", email, resetURL)
+	} else {
+		if err := s.mail.SendPasswordReset(email, resetURL); err != nil {
+			return fmt.Errorf("send password reset email: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *AuthService) ResetPassword(ctx context.Context, plaintextToken, newPassword string) (TokenPair, error) {
+	h := hashEmailVerificationToken(plaintextToken)
+	hashBytes, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return TokenPair{}, fmt.Errorf("hash password: %w", err)
+	}
+
+	u, err := s.userRepo.ResetPasswordByResetTokenHash(ctx, h, string(hashBytes))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return TokenPair{}, ErrInvalidPasswordResetToken
+		}
+		return TokenPair{}, err
+	}
+
+	if err := s.refreshTokenRepo.DeleteAllForUser(ctx, u.ID); err != nil {
+		return TokenPair{}, fmt.Errorf("revoke sessions: %w", err)
+	}
+
+	return s.issueTokenPair(ctx, u)
 }
 
 func (s *AuthService) Login(ctx context.Context, email, password string) (TokenPair, error) {
