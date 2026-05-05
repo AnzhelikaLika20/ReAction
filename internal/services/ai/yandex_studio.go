@@ -89,7 +89,7 @@ func (s *AIService) CheckMessageWithHistoryAndScenarios(
 
 	scenariosToFind := getScenariosToSearch(scenarios, existingReminders)
 	if len(scenariosToFind) > 0 {
-		raw, err := json.Marshal(scenarios)
+		raw, err := json.Marshal(scenariosToFind)
 		if err != nil {
 			return nil, fmt.Errorf("marshal scenarios: %w", err)
 		}
