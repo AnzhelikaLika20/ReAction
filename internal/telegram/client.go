@@ -6,6 +6,7 @@ import (
 	"ReAction/internal/services/chats"
 	"context"
 	"fmt"
+	"log"
 	"math"
 	"path/filepath"
 	"sync"
@@ -61,6 +62,11 @@ func NewClientWithHTTPAuth(messengerAccountID string, appUserID string, cfg conf
 		FileDirectory:       filepath.Join(cfg.SessionsRoot, "files", messengerAccountID),
 		IgnoreFileNames:     false,
 	})
+
+	_, err := tdlibClient.AddProxy()
+	if err != nil {
+		log.Println("AddProxy: ", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 

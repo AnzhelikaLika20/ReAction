@@ -1529,7 +1529,7 @@
                 "password": {
                     "type": "string",
                     "minLength": 8,
-                    "example": "secret12345"
+                    "example": "Secret123"
                 }
             }
         },
@@ -1557,7 +1557,7 @@
                 "password": {
                     "type": "string",
                     "minLength": 8,
-                    "example": "secret12345"
+                    "example": "Secret123"
                 },
                 "token": {
                     "type": "string"

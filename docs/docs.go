@@ -1540,7 +1540,7 @@ const docTemplate = `{
                 "password": {
                     "type": "string",
                     "minLength": 8,
-                    "example": "secret12345"
+                    "example": "Secret123"
                 }
             }
         },
@@ -1568,7 +1568,7 @@ const docTemplate = `{
                 "password": {
                     "type": "string",
                     "minLength": 8,
-                    "example": "secret12345"
+                    "example": "Secret123"
                 },
                 "token": {
                     "type": "string"

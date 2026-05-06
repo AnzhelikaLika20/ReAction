@@ -16,8 +16,7 @@ import (
 
 const (
 	yandexGPTAPIURL    = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
-	modelYandexGPT     = "yandexgpt"
-	modelYandexGPTLite = "yandexgpt-lite"
+	modelYandexGPTLite = "yandexgpt-5.1"
 )
 
 type AIService struct {
@@ -30,7 +29,7 @@ func NewYandexGPTService(cfg *config.AppConfig) (*AIService, error) {
 		return nil, fmt.Errorf("Yandex GPT: YANDEX_AI_FOLDER_ID is required")
 	}
 	if cfg.AIConfig.APIKey == "" && cfg.AIConfig.YandexIamToken == "" {
-		return nil, fmt.Errorf("Yandex GPT: set YANDEX_AI_API_KEY (recommended) or YANDEX_IAM_TOKEN")
+		return nil, fmt.Errorf("Yandex GPT: set YANDEX_AI_API_KEY or YANDEX_IAM_TOKEN")
 	}
 
 	httpClient := &http.Client{
