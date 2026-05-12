@@ -164,6 +164,10 @@ func (s *AuthService) Refresh(ctx context.Context, plainRefreshToken string) (To
 }
 
 func (s *AuthService) Register(ctx context.Context, email, password string) error {
+	if err := ValidateCredentialPassword(password); err != nil {
+		return err
+	}
+
 	existing, _, err := s.userRepo.GetUserByEmail(ctx, email)
 	if err != nil {
 		return err
@@ -289,6 +293,10 @@ func (s *AuthService) RequestPasswordReset(ctx context.Context, email string) er
 }
 
 func (s *AuthService) ResetPassword(ctx context.Context, plaintextToken, newPassword string) (TokenPair, error) {
+	if err := ValidateCredentialPassword(newPassword); err != nil {
+		return TokenPair{}, err
+	}
+
 	h := hashEmailVerificationToken(plaintextToken)
 	hashBytes, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {

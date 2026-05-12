@@ -6,6 +6,8 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: reaction
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file:
       - .env
     ports:

@@ -16,7 +16,7 @@ import (
 // @Description Регистрация по email и паролю
 type RegisterRequest struct {
 	Email    string `json:"email" example:"user@example.com" binding:"required,email"`
-	Password string `json:"password" example:"secret12345" binding:"required,min=8"`
+	Password string `json:"password" example:"Secret123" binding:"required,min=8"`
 }
 
 // @Description Вход по email и паролю
@@ -84,7 +84,7 @@ type ForgotPasswordRequest struct {
 // @Description Новый пароль по одноразовому токену из письма
 type ResetPasswordRequest struct {
 	Token    string `json:"token" binding:"required"`
-	Password string `json:"password" example:"secret12345" binding:"required,min=8"`
+	Password string `json:"password" example:"Secret123" binding:"required,min=8"`
 }
 
 // @Description SessionResponse состояние авторизации Telegram (tdlib) для указанного messenger_account_id
@@ -137,6 +137,10 @@ func (h *AuthHandlers) Register(c *gin.Context) {
 	if err := h.authService.Register(c.Request.Context(), req.Email, req.Password); err != nil {
 		if errors.Is(err, auth.ErrEmailTaken) {
 			c.JSON(http.StatusConflict, ErrorResponse{Error: err.Error()})
+			return
+		}
+		if errors.Is(err, auth.ErrWeakPassword) {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
@@ -503,6 +507,10 @@ func (h *AuthHandlers) ResetPassword(c *gin.Context) {
 	pair, err := h.authService.ResetPassword(c.Request.Context(), strings.TrimSpace(req.Token), req.Password)
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidPasswordResetToken) {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+			return
+		}
+		if errors.Is(err, auth.ErrWeakPassword) {
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 			return
 		}
