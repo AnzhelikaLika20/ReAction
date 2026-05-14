@@ -63,7 +63,7 @@ func NewClientWithHTTPAuth(messengerAccountID string, appUserID string, cfg conf
 		IgnoreFileNames:     false,
 	})
 
-	_, err := tdlibClient.AddProxy()
+	_, err := tdlibClient.AddProxy(cfg.ProxyServer, cfg.ProxyPort)
 	if err != nil {
 		log.Println("AddProxy: ", err)
 	}
