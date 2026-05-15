@@ -713,6 +713,10 @@ paths:
         name: messenger_account_id
         required: true
         type: string
+      - description: Поиск по названию чата (запрос к Telegram)
+        in: query
+        name: q
+        type: string
       produces:
       - application/json
       responses:

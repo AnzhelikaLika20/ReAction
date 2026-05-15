@@ -31,3 +31,19 @@ func ReminderMinutesBeforeFromParams(params []byte) (int32, error) {
 		return 0, fmt.Errorf("reminder_minutes_before: unsupported type %T", v)
 	}
 }
+
+func ReminderDescriptionFromParams(params []byte) (string, error) {
+	var m map[string]interface{}
+	if err := json.Unmarshal(params, &m); err != nil {
+		return "", fmt.Errorf("unmarshal scenario params: %w", err)
+	}
+	v, ok := m["reminder_description_template"]
+	if !ok {
+		return "", nil
+	}
+	s, ok := v.(string)
+	if !ok {
+		return "", nil
+	}
+	return s, nil
+}

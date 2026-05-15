@@ -9,10 +9,16 @@ import (
 	"log"
 	"math"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/Arman92/go-tdlib"
+)
+
+const (
+	defaultChatsListLimit = 20
+	maxChatSearchResults  = 100
 )
 
 type Client struct {
@@ -63,7 +69,7 @@ func NewClientWithHTTPAuth(messengerAccountID string, appUserID string, cfg conf
 		IgnoreFileNames:     false,
 	})
 
-	_, err := tdlibClient.AddProxy()
+	_, err := tdlibClient.AddProxy(cfg.ProxyServer, cfg.ProxyPort)
 	if err != nil {
 		log.Println("AddProxy: ", err)
 	}
@@ -82,7 +88,11 @@ func NewClientWithHTTPAuth(messengerAccountID string, appUserID string, cfg conf
 	}
 
 	authManager.RegisterAuthorizer(messengerAccountID, appUserID, client)
+
+	client.mu.Lock()
 	client.authState = "inited"
+	client.UpdatedAt = time.Now()
+	client.mu.Unlock()
 
 	return client, nil
 }
@@ -110,7 +120,35 @@ func (c *Client) GetListener() *Listener {
 }
 
 func (c *Client) GetUserChats() ([]*tdlib.Chat, error) {
-	return getChatList(c.tdlibClient, 20)
+	return getChatList(c.tdlibClient, defaultChatsListLimit)
+}
+
+func (c *Client) SearchUserChats(query string, limit int) ([]*tdlib.Chat, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, fmt.Errorf("search query is empty")
+	}
+	if limit <= 0 {
+		limit = maxChatSearchResults
+	}
+	if limit > maxChatSearchResults {
+		limit = maxChatSearchResults
+	}
+
+	found, err := c.tdlibClient.SearchChatsOnServer(query, int32(limit))
+	if err != nil {
+		return nil, err
+	}
+
+	chats := make([]*tdlib.Chat, 0, len(found.ChatIDs))
+	for _, chatID := range found.ChatIDs {
+		chat, err := c.tdlibClient.GetChat(chatID)
+		if err != nil {
+			return nil, err
+		}
+		chats = append(chats, chat)
+	}
+	return chats, nil
 }
 
 func getChatList(client *tdlib.Client, limit int) ([]*tdlib.Chat, error) {

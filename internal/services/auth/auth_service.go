@@ -405,7 +405,7 @@ func (s *AuthService) SetPhoneNumber(ctx context.Context, userID, messengerAccou
 		log.Printf("[AUTH] SetTelegramPhoneLabel after phone: %v", err)
 	}
 
-	return string(state.GetAuthorizationStateEnum()), nil
+	return state, nil
 }
 
 func (s *AuthService) telegramPhoneTakenByUser(ctx context.Context, userID, phoneKey string) (bool, error) {
@@ -671,8 +671,19 @@ func (s *AuthService) GetUserChats(ctx context.Context, messengerAccountID strin
 		return nil, fmt.Errorf("error while getting user chats: %w", err)
 	}
 
-	log.Println(len(chats))
+	return chats, nil
+}
 
+func (s *AuthService) SearchUserChats(ctx context.Context, messengerAccountID, query string) ([]*tdlib.Chat, error) {
+	client := s.authManager.GetClientBySessionId(messengerAccountID)
+	if client == nil {
+		return nil, ErrTelegramNotConnected
+	}
+
+	chats, err := client.SearchUserChats(query, 0)
+	if err != nil {
+		return nil, fmt.Errorf("search user chats: %w", err)
+	}
 	return chats, nil
 }
 

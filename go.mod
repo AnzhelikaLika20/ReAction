@@ -76,4 +76,4 @@ require (
 	golang.org/x/sys v0.39.0 // indirect
 )
 
-replace github.com/Arman92/go-tdlib => github.com/AnzhelikaLika20/go-tdlib v0.0.0-20260506232153-dce569f08fe7
+replace github.com/Arman92/go-tdlib => github.com/AnzhelikaLika20/go-tdlib v0.0.0-20260514212251-f4a0b8207e25

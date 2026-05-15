@@ -9,6 +9,8 @@ import (
 	"github.com/Arman92/go-tdlib"
 )
 
+const authStateMonitorInterval = 500 * time.Millisecond
+
 type AuthStateManager struct {
 	mu      sync.RWMutex
 	clients map[string]*Client
@@ -23,7 +25,7 @@ func NewAuthStateManager() *AuthStateManager {
 }
 
 func (m *AuthStateManager) monitorAuthState(sessionID string, appUserID string, client *Client) {
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(authStateMonitorInterval)
 	defer ticker.Stop()
 	defer close(client.authReady)
 
@@ -85,32 +87,36 @@ func (m *AuthStateManager) GetAuthState(id string) string {
 	return s
 }
 
-func (m *AuthStateManager) SetPhoneNumber(id, phoneNumber string) (tdlib.AuthorizationState, error) {
+func (m *AuthStateManager) SetPhoneNumber(id, phoneNumber string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	client, exists := m.clients[id]
 	if !exists {
-		return nil, fmt.Errorf("client not found")
+		return "", fmt.Errorf("client not found")
 	}
 
 	client.mu.RLock()
 	state := client.authState
 	client.mu.RUnlock()
 
+	if state == "ready" || state == "wait_code" || state == "wait_password" {
+		return state, nil
+	}
+
 	if state != "wait_phone" {
-		return nil, fmt.Errorf("unexpected state %s", state)
+		return "", fmt.Errorf("unexpected state %s", state)
 	}
 
 	newState, err := client.tdlibClient.SendPhoneNumber(phoneNumber)
 	if err != nil {
-		return nil, fmt.Errorf("Error sending phone number: %v", err)
+		return "", fmt.Errorf("Error sending phone number: %v", err)
 	}
 
 	client.SetTelegramPhoneNumber(phoneNumber)
 	client.UpdatedAt = time.Now()
 
-	return newState, nil
+	return ConvertAuthState(newState.GetAuthorizationStateEnum()), nil
 }
 
 func (m *AuthStateManager) SetCode(id, code string) (tdlib.AuthorizationState, error) {

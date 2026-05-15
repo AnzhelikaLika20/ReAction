@@ -39,6 +39,8 @@ type TelegramConfig struct {
 	LogLevel     int32
 	TestDc       bool
 	SessionsRoot string
+	ProxyServer  string
+	ProxyPort    int
 }
 
 type LoggingConfig struct {
@@ -90,6 +92,12 @@ func Load() (*AppConfig, error) {
 
 	cfg.Telegram.TestDc = GetEnvAsBool("TEST_DC", false)
 	cfg.Telegram.SessionsRoot = GetEnv("TDLIB_SESSIONS_ROOT", "/app/tdlib-sessions")
+
+	cfg.Telegram.ProxyServer = GetEnv("PROXY_SERVER", "ss-local:1080")
+	cfg.Telegram.ProxyPort, err = strconv.Atoi(GetEnv("PROXY_PORT", "1080"))
+	if err != nil {
+		return nil, err
+	}
 
 	log.Println("TEST_DC=", cfg.Telegram.TestDc)
 

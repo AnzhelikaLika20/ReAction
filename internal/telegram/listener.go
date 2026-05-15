@@ -111,13 +111,6 @@ func (l *Listener) handleNewMessage(update *tdlib.UpdateNewMessage) {
 	message.ChatTitle = chatTitle
 	message.ChatType = chatType
 
-	if message.SenderID > 0 {
-		user := l.getUserInfo(int32(message.SenderID))
-
-		_ = user
-		//TODO: use sender info
-	}
-
 	l.sendToKafka(message, "message_new")
 }
 
