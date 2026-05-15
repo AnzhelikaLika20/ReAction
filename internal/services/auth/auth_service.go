@@ -405,7 +405,7 @@ func (s *AuthService) SetPhoneNumber(ctx context.Context, userID, messengerAccou
 		log.Printf("[AUTH] SetTelegramPhoneLabel after phone: %v", err)
 	}
 
-	return string(state.GetAuthorizationStateEnum()), nil
+	return state, nil
 }
 
 func (s *AuthService) telegramPhoneTakenByUser(ctx context.Context, userID, phoneKey string) (bool, error) {

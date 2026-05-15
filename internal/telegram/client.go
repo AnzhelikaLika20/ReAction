@@ -88,7 +88,11 @@ func NewClientWithHTTPAuth(messengerAccountID string, appUserID string, cfg conf
 	}
 
 	authManager.RegisterAuthorizer(messengerAccountID, appUserID, client)
+
+	client.mu.Lock()
 	client.authState = "inited"
+	client.UpdatedAt = time.Now()
+	client.mu.Unlock()
 
 	return client, nil
 }
