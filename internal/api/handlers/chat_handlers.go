@@ -8,6 +8,7 @@ import (
 	"ReAction/internal/services/auth"
 	"ReAction/internal/services/chats"
 
+	"github.com/Arman92/go-tdlib"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 )
@@ -30,6 +31,7 @@ func NewChatHandler(chatService *chats.ChatService, authService *auth.AuthServic
 // @Produce json
 // @Security Bearer
 // @Param messenger_account_id query string true "UUID аккаунта мессенджера"
+// @Param q query string false "Поиск по названию чата (запрос к Telegram)"
 // @Success 200 {array} chats.ChatDTO
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
@@ -57,7 +59,15 @@ func (h *ChatHandler) GetUserChats(c *gin.Context) {
 		return
 	}
 
-	chatsList, err := h.authService.GetUserChats(c.Request.Context(), messengerID)
+	searchQuery := strings.TrimSpace(c.Query("q"))
+
+	var chatsList []*tdlib.Chat
+	var err error
+	if searchQuery != "" {
+		chatsList, err = h.authService.SearchUserChats(c.Request.Context(), messengerID, searchQuery)
+	} else {
+		chatsList, err = h.authService.GetUserChats(c.Request.Context(), messengerID)
+	}
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, auth.ErrTelegramNotConnected) {

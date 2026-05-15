@@ -665,6 +665,12 @@ const docTemplate = `{
                         "name": "messenger_account_id",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Поиск по названию чата (запрос к Telegram)",
+                        "name": "q",
+                        "in": "query"
                     }
                 ],
                 "responses": {
