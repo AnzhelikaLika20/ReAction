@@ -274,13 +274,24 @@ func (c *ChatUpdatesConsumer) ScheduleActionIfNeeded(msg ConversationMessage) {
 		return
 	}
 
+	aiTitle := strings.TrimSpace(result.Reminder.Title)
+	aiDescription := strings.TrimSpace(result.Reminder.Description)
+	reminderDescription := aiDescription
+	if sc, err := c.scenarioRepo.GetByID(ctx, scenarioID, msg.UserID); err == nil {
+		if userDesc, err := storage.ReminderDescriptionFromParams(sc.Params); err == nil {
+			if d := strings.TrimSpace(userDesc); d != "" {
+				reminderDescription = d
+			}
+		}
+	}
+
 	if err := c.userActionProducer.SendReminder(
 		msg.SessionID,
 		msg.UserID,
 		scenarioID,
 		msg.ChatID,
-		fmt.Sprintf("[%s] %s", msg.ChatTitle, strings.TrimSpace(result.Reminder.Title)),
-		"", // TODO: fill reminder description
+		fmt.Sprintf("[%s] %s", msg.ChatTitle, aiTitle),
+		reminderDescription,
 		at,
 		endAt,
 	); err != nil {
